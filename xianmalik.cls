@@ -2,7 +2,6 @@
 \ProvidesClass{xianmalik}[2025/09/20 v1.6.1 xianmalik Curriculum Vitae Class]
 \NeedsTeXFormat{LaTeX2e}
 
-
 % Class options
 % Options for draft or final
 \DeclareOption{draft}{\setlength\overfullrule{5pt}}
@@ -13,7 +12,6 @@
 }
 \ProcessOptions\relax
 \LoadClass{article}
-
 
 % Packages
 % tables, lists, alignment, layout, header/footer, colors, conditionals, icons, fonts
@@ -74,7 +72,6 @@
 % use fancyhdr
 \pagestyle{fancy}
 
-
 % Colors
 \definecolor{white}{HTML}{FFFFFF}
 \definecolor{black}{HTML}{000000}
@@ -98,7 +95,6 @@
 \def\@sectioncolor#1#2#3{%
   \ifbool{acvSectionColorHighlight}{{\color{accentcolor}#1#2#3}}{#1#2#3}%
 }
-
 
 % Fonts
 \newcommand*{\headerfont}{\fontspec{Inter}[RawFeature = {+wght=700}]}
@@ -125,13 +121,9 @@
 \newcommand*{\descriptionstyle}[1]{{\fontsize{9pt}{1em}\bodyfont\upshape\color{text} #1}}
 \newcommand*{\metastyle}[1]{{\fontsize{8pt}{1em}\bodyfont\upshape\color{graytext} #1}}
 
-
-
 % Skill styles
 \newcommand*{\skilltypestyle}[1]{{\fontsize{10pt}{1em}\bodyfont\color{darktext} #1}}
 \newcommand*{\skillsetstyle}[1]{{\fontsize{9pt}{1em}\bodyfontlight\color{graytext} #1}}
-
-
 
 % Personal info commands
 \newcommand*{\name}[2]{
@@ -160,8 +152,6 @@
 % LinkedIn
 \newcommand*{\linkedin}[1]{\def\@linkedin{#1}}
 
-
-
 % Helper macros
 \newcommand{\acvHeaderNameDelim}{\space}
 \newcommand{\acvHeaderAfterNameSkip}{.4mm}
@@ -176,7 +166,6 @@
 \newcommand{\acvSectionTopSkip}{3mm}
 \newcommand{\acvSectionContentTopSkip}{2.5mm}
 
-
 % Utilities
 \newcolumntype{L}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
 \newcolumntype{R}[1]{>{\raggedleft\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
@@ -187,7 +176,6 @@
 \def\vhrulefill#1{\leavevmode\leaders\hrule\@height#1\hfill \kern\z@}
 
 % conditional helper unused — removed
-
 
 % CV structure — header
 \newcommand*{\makecvheader}[1][C]{%
@@ -254,7 +242,6 @@
   \color{sectiondivider}\vhrulefill{0.9pt}
 }
 
-
 % Define a paragraph for CV
 \newenvironment{cvparagraph}{%
   \vspace{\acvSectionContentTopSkip}
@@ -298,8 +285,6 @@
   \vspace{1mm}
 }
 
-
-
 % Define an environment for cvskill
 \newenvironment{cvskills}{%
   \vspace{\acvSectionContentTopSkip}
@@ -331,5 +316,3 @@
   \end{justify}
   \vspace{-4.0mm}
 }
-
-
