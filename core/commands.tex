@@ -1,0 +1,47 @@
+% Personal info commands
+\newcommand*{\name}[2]{
+    \def\@firstname{\headerfont #1}%
+    \def\@lastname{\headerfont #2}
+}
+
+% Address
+\newcommand*{\address}[1]{\def\@address{#1}}
+
+% Position
+\newcommand*{\position}[1]{\def\@position{#1}}
+
+% Mobile
+\newcommand*{\mobile}[1]{\def\@mobile{#1}}
+
+% Email
+\newcommand*{\email}[1]{\def\@email{#1}}
+
+% Homepage
+\newcommand*{\homepage}[1]{\def\@homepage{#1}}
+
+% Github
+\newcommand*{\github}[1]{\def\@github{#1}}
+
+% LinkedIn
+\newcommand*{\linkedin}[1]{\def\@linkedin{#1}}
+
+% Helper macros
+\newcommand{\acvHeaderNameDelim}{\space}
+\newcommand{\acvHeaderAfterNameSkip}{.4mm}
+\newcommand{\acvHeaderAfterAddressSkip}{-.5mm}
+\newcommand{\acvHeaderIconSep}{\space}
+\newcommand{\acvHeaderSocialSep}{\quad\textbar\quad}
+\newcommand{\acvHeaderAfterSocialSkip}{6mm}
+
+% Spacing
+\newcommand{\acvSectionTopSkip}{3mm}
+\newcommand{\acvSectionContentTopSkip}{2.5mm}
+
+% Utilities
+\newcolumntype{L}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+\newcolumntype{R}[1]{>{\raggedleft\let\newline\\\arraybackslash\hspace{0pt}}m{#1}}
+\newcolumntype{P}[1]{>{\raggedright\let\newline\\\arraybackslash\hspace{0pt}}p{#1}}
+\newcolumntype{T}[1]{>{\raggedleft\let\newline\\\arraybackslash\hspace{0pt}}p{#1}}
+
+% Horizontal rule fill
+\def\vhrulefill#1{\leavevmode\leaders\hrule\@height#1\hfill \kern\z@}

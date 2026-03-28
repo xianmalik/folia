@@ -1,0 +1,18 @@
+% Font package and main font setup
+\RequirePackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+
+\setmainfont[
+  Path = font/,
+  UprightFont = Inter-Variable.ttf,
+  BoldFont = Inter-Variable.ttf,
+  BoldFeatures = {RawFeature = {+wght=700}},
+  RawFeature = {+wght=400}
+]{Inter}
+
+% Font commands
+\newcommand*{\headerfont}{\fontspec{Inter}[RawFeature = {+wght=700}]}
+\newcommand*{\headerfontlight}{\fontspec{Inter}[RawFeature = {+wght=300}]}
+\newcommand*{\footerfont}{\fontspec{Inter}[RawFeature = {+wght=400}]}
+\newcommand*{\bodyfont}{\fontspec{Inter}[RawFeature = {+wght=400}]}
+\newcommand*{\bodyfontlight}{\fontspec{Inter}[RawFeature = {+wght=300}]}
