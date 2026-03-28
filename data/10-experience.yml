@@ -4,30 +4,32 @@ positions:
     location: Hybrid - Dhaka, Bangladesh
     dates: January 2025 - Present
     items:
-      - Led frontend development for an ML/AI-powered telecom network optimization platform, architecting a scalable dashboard solution using Next.js, shadcn/ui, Tailwind CSS, and Zustand for state management.
-      - Designed and implemented advanced data visualization features with interactive charts and diagrams to display real-time network performance metrics and ML model predictions for network operators.
-      - Integrated REST API endpoints to collect, push, and manage large-scale telecom network data with efficient caching strategies and optimized data fetching patterns.
-      - Applied frontend optimization techniques including code splitting, lazy loading, and memoization to ensure smooth performance when handling complex network datasets and AI-generated insights.
-      - Developed industry-grade machine controller software delivering real-time and historical data visualization for manufacturing operations using Next.js and WebSocket integration.
-      - Established component architecture and design system standards, ensuring scalability and maintainability across multiple dashboard applications.
+      - Developed full-stack [[TypeScript]] features for an ML/AI-powered telecom network optimization platform, building a scalable dashboard with Next.js and Zustand while authoring type-safe API integration layers consumed by Python ML backend services.
+      - Designed and implemented advanced data visualization with interactive real-time charts displaying network performance metrics and ML model predictions for telecom operators.
+      - Engineered [[TypeScript]] REST API clients with strict type contracts, efficient caching strategies, and optimized data fetching patterns to manage large-scale telecom network datasets.
+      - Developed industry-grade machine controller software with real-time bidirectional communication using [[TypeScript]], Next.js, and WebSocket integration for manufacturing operations.
+      - Containerized frontend infrastructure with Docker and deployed across AWS environments, optimizing CI/CD pipelines and build performance.
+      - Established TypeScript-first component architecture and design system standards, ensuring type safety and maintainability across multiple dashboard applications.
+
   - title: Contractual & Part time
     company: Freelance Web Engineer
     location: Remote - Dhaka, Bangladesh
     dates: January 2015 - Present
     items:
-      - Provided full-stack website development solutions using WordPress, ReactJS, NodeJS, and other modern web application technologies.
-      - Built websites and web applications using HTML, CSS, JavaScript, JS Frameworks etc.
-      - Utilized modern web technologies to develop custom solutions for diverse industries.
-      - Planned and engineered RESTful web services to manipulate dynamic datasets.
+      - Architected and delivered full-stack [[TypeScript]] applications using Node.js/Express backends and React/Next.js frontends for clients across diverse industries.
+      - Designed and implemented RESTful APIs with TypeScript and ExpressJS, integrating PostgreSQL and Firebase data stores with validated, type-safe data models.
+      - Developed Python automation scripts and data processing utilities to complement TypeScript-based systems and streamline backend workflows.
+      - Planned and engineered scalable web services applying modern TypeScript tooling across the full development lifecycle from API design to deployment.
+
   - title: Senior Front-End Engineer
     company: Curotec
     location: Remote - Pennsylvania, USA
     dates: June 2022 - May 2023
     items:
-      - Developed and delivered 5+ industry-standard web applications using ReactJS, NextJS, Bootstrap, and Laravel, enhancing client satisfaction and achieving a 25% increase in user engagement.
-      - Ensured seamless user experiences with 100% cross-browser compatibility and implementing performance optimizations, resulting in a 20% increase in performance scores.
-      - Strengthened communication skills through regular interactions with others.
+      - Developed and delivered 5+ industry-standard web applications using [[TypeScript]], ReactJS, NextJS, and Laravel, enhancing client satisfaction and achieving a 25% increase in user engagement.
+      - Ensured seamless user experiences with 100% cross-browser compatibility and performance optimizations, resulting in a 20% increase in performance scores.
       - Resolved complex issues, enhanced operational efficiency by 30%, and consistently delivered exceptional service, contributing to a 25% increase in customer satisfaction.
+
   - title: Front-End Engineer
     company: Reformed Tech
     location: Dhaka, Bangladesh
@@ -35,9 +37,9 @@ positions:
     items:
       - Designed and implemented robust Content Management Systems, enhancing client interface efficiency by 40% and reducing content update times by 30%.
       - Took concepts and produced design mock-ups and prototypes to strengthen designs, enhance user experiences, and improve site interactions.
-      - Worked closely with UX / UI designers to implement visually appealing interfaces that met client requirements.
       - Performed security maintenance and patching on the website interface, ensuring 99.9% uptime and safeguarding post-launch viability.
       - Conducted unit testing and resolved issues in web applications, achieving a 95% bug resolution rate and enhancing overall application stability.
+
   - title: Front-End Engineer
     company: XpeedStudio
     location: Dhaka, Bangladesh

@@ -1,29 +1,19 @@
 skills:
   - category: Languages & Core
-    items: [HTML5, CSS, JavaScript, NodeJS, Typescript, Python]
-  - category: Frameworks & Libraries
-    items: [ReactJS, NextJS, VueJS, jQuery]
-  - category: Styling & Preprocessors
-    items: ["Scss & Less", Bootstrap, "Ant Design", MaterialUI, "Shadcn/ui", TailwindCSS]
-  - category: Build Tools
-    items: [Webpack, Babel, Rollup, Vite, PyYAML, "Build Automation"]
-  - category: CMS & WordPress
-    items: [Themes and Plugins Development]
+    items: [TypeScript, JavaScript, Python, "Node.js", HTML5, CSS3]
   - category: Backend & APIs
-    items: [ExpressJS, FastAPI, "RESTful API", JWT, 0Auth, Postman]
+    items: [ExpressJS, FastAPI, "RESTful API", WebSockets, Webhooks, JWT, OAuth, Postman]
+  - category: Frontend Frameworks
+    items: [ReactJS, NextJS, VueJS, Svelte, Gatsby]
+  - category: Styling & UI
+    items: [TailwindCSS, "Shadcn/ui", MaterialUI, "Ant Design", Bootstrap, "Scss & Less"]
   - category: Database & Storage
-    items: [MySQL, MongoDB, Firebase, PostgreSQL, Supabase, "Sanity Studio"]
-  - category: Testing
-    items: [Jest, Storybook]
-  - category: AI & Development
-    items: ["LLM Integration", "Prompt Engineering", "AI Agents"]
+    items: [PostgreSQL, MySQL, MongoDB, Firebase, Supabase, "Sanity Studio"]
+  - category: AI & Machine Learning
+    items: ["LLM Integration", "Prompt Engineering", "Agentic AI", MCP, "ML Pipeline Integration"]
   - category: DevOps & Cloud
-    items: [Git, Github, "GitHub Actions", AWS, Docker]
-  - category: Documentation
-    items: [LaTeX, Markdown]
-  - category: Professional Skills
-    items: [Troubleshooting, Debugging, "Unit testing", Documentation, "Strategic Thinking", Management, Problem-solving, Teamwork]
+    items: [Git, "GitHub Actions", Docker, AWS, "CI/CD Pipelines"]
+  - category: Testing & Build
+    items: [Jest, Storybook, Vite, Webpack, Babel]
   - category: Project Management
-    items: [Jira, Notion, Agile, Scrum, Kanban]
-  - category: Operating Systems
-    items: [MacOS, Linux, Windows]
+    items: [Agile, Scrum, Jira, Notion, Kanban]
