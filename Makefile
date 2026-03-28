@@ -1,7 +1,7 @@
 # Makefile for xianmalik_cv
 # Targets: build (default), watch, open, clean, deps, venv
 
-.PHONY: build watch open clean deps venv
+.PHONY: build watch open clean deps venv lint release docker-build
 
 BUILD_SCRIPT := ./scripts/build.py
 PDF := dist/resume.pdf
@@ -28,4 +28,19 @@ open: build
 
 clean:
 	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) ./scripts/clean.py
+
+lint: deps
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/validate.py
+
+release: deps
+	@[ -n "$(VERSION)" ] || { echo "Usage: make release VERSION=x.y.z"; exit 1; }
+	@echo "$(VERSION)" > VERSION
+	@git add VERSION
+	@git commit -m "chore: release v$(VERSION)"
+	@git tag "v$(VERSION)"
+	@echo "Tagged v$(VERSION) — push with: git push && git push --tags"
+
+docker-build:
+	@docker build -t folia .
+	@docker run --rm -v "$(PWD)/dist:/app/dist" folia
 

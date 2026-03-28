@@ -220,8 +220,26 @@ def main() -> int:
         return 0
     else:
         print(f"{RED}✗ Compilation failed{NC}")
-        print(f"{GRAY}Check dist/resume.log for details{NC}")
+        _print_latex_errors(os.path.join("dist", "resume.log"))
         return 1
+
+
+def _print_latex_errors(log_path: str) -> None:
+    """Parse XeLaTeX log and print the first few error lines to stdout."""
+    try:
+        with open(log_path, "r", errors="replace") as f:
+            lines = f.readlines()
+    except OSError:
+        print(f"{GRAY}Log file not found: {log_path}{NC}")
+        return
+
+    error_lines = [l for l in lines if l.startswith("!")]
+    if error_lines:
+        print(f"{YELLOW}LaTeX errors:{NC}")
+        for line in error_lines[:5]:
+            print(f"  {RED}{line.rstrip()}{NC}")
+    else:
+        print(f"{GRAY}See {log_path} for details{NC}")
 
 
 if __name__ == "__main__":
