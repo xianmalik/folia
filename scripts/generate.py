@@ -209,9 +209,9 @@ def gen_languages(data: dict | None) -> str | None:
     )
     return (
         "\\cvsection{LANGUAGES}\n\n"
-        "\\begin{cvskills}\n\n"
+        "\\begin{cvlanguages}\n\n"
         f"{rows}\n\n"
-        "\\end{cvskills}\n"
+        "\\end{cvlanguages}\n"
     )
 
 

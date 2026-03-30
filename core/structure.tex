@@ -128,6 +128,19 @@
   \skilltypestyle{#1} & \skillsetstyle{#2} \\
 }
 
+% CV languages container — first column auto-sizes to longest entry
+\newenvironment{cvlanguages}{%
+  \vspace{\acvSectionContentTopSkip}
+  \vspace{-2.0mm}
+  \begin{flushleft}
+    \setlength\tabcolsep{1ex}
+    \setlength{\extrarowheight}{0pt}
+    \begin{tabular}{r l}
+}{%
+    \end{tabular}
+  \end{flushleft}
+}
+
 % CV items list (for use inside cventry)
 \newenvironment{cvitems}{%
   \vspace{-4.0mm}
