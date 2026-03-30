@@ -62,18 +62,18 @@ if experience and isinstance(experience.get("internships"), list):
     require_list(experience, "10-experience.yml", "internships",
                  ["title", "company", "location", "dates"])
 
-# 20-education.yml
-education = load("20-education.yml")
-require_list(education, "20-education.yml", "schools",
+# 20-projects.yml
+projects = load("20-projects.yml")
+require_list(projects, "20-projects.yml", "projects", ["name", "subtitle", "items", "tech"])
+
+# 30-skills.yml
+skills = load("30-skills.yml")
+require_list(skills, "30-skills.yml", "skills", ["category", "items"])
+
+# 40-education.yml
+education = load("40-education.yml")
+require_list(education, "40-education.yml", "schools",
              ["degree", "institution", "location", "dates"])
-
-# 30-projects.yml
-projects = load("30-projects.yml")
-require_list(projects, "30-projects.yml", "projects", ["name", "subtitle", "items", "tech"])
-
-# 40-skills.yml
-skills = load("40-skills.yml")
-require_list(skills, "40-skills.yml", "skills", ["category", "items"])
 
 # 50-languages.yml
 languages = load("50-languages.yml")

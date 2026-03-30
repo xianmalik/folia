@@ -11,10 +11,10 @@
 
 ## Medium Impact
 
-- [ ] Fix section file numbering mismatch — `data/` numbering doesn't match `sections/` or display order in `resume.tex`
-- [ ] Add type hints throughout `generate.py` — functions return `dict | None` without annotation; IDE support broken
-- [ ] Add docstrings to core generator functions
-- [ ] Deduplicate GitHub Actions setup steps — `build.yml` and `release.yml` repeat the full TeX Live + Python install sequence
+- [x] Fix section file numbering mismatch — `data/` numbering doesn't match `sections/` or display order in `resume.tex`
+- [x] Add type hints throughout `generate.py` — functions return `dict | None` without annotation; IDE support broken
+- [x] Add docstrings to core generator functions
+- [x] Deduplicate GitHub Actions setup steps — `build.yml` and `release.yml` repeat the full TeX Live + Python install sequence
 
 ## Polish / Dev Experience
 

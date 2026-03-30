@@ -35,11 +35,12 @@ def read_yaml(filename: str) -> dict | None:
 
 
 def write_file(path: Path, content: str) -> None:
+    """Write content to path using UTF-8 encoding."""
     path.write_text(content, encoding="utf-8")
 
 
 def _escape_special(s: str) -> str:
-    """Escape LaTeX special characters in a plain string."""
+    """Escape LaTeX special characters in a plain string, leaving no formatting."""
     return (
         s
         .replace("\\", "\\textbackslash{}")
@@ -54,7 +55,11 @@ def _escape_special(s: str) -> str:
 
 
 def latex_escape(s: str) -> str:
-    """Escape a string for LaTeX, converting [[text]] to \\textbf{text}."""
+    """Escape s for LaTeX output, converting [[text]] markers to \\textbf{text}.
+
+    Bold markers are split out before escaping so their braces are not
+    themselves escaped.
+    """
     s = str(s)
     parts = re.split(r"(\[\[.*?\]\])", s)
     result = []
@@ -67,7 +72,13 @@ def latex_escape(s: str) -> str:
 
 
 def _build_cventry(entry: dict, title_key: str, org_key: str) -> str:
-    """Render a single \\cventry block from an entry dict."""
+    """Render a single \\cventry block from an entry dict.
+
+    Args:
+        entry: Dict with keys for title_key, org_key, location, dates, items.
+        title_key: Key to use as the position/degree field (e.g. "title", "degree").
+        org_key: Key to use as the organisation field (e.g. "company", "institution").
+    """
     bullets = "\n".join(
         f"        \\item {{{latex_escape(t)}}}" for t in entry.get("items", [])
     )
@@ -86,7 +97,7 @@ def _build_cventry(entry: dict, title_key: str, org_key: str) -> str:
 
 
 def _wrap_section(title: str, body: str) -> str:
-    """Wrap a body in a cvsection + cventries block."""
+    """Wrap pre-rendered entry blocks in a \\cvsection + cventries environment."""
     return (
         f"\\cvsection{{{title}}}\n\n"
         "\\begin{cventries}\n\n"
@@ -96,6 +107,7 @@ def _wrap_section(title: str, body: str) -> str:
 
 
 def gen_summary(data: dict | None) -> str | None:
+    """Generate the ABOUT ME section from 00-summary.yml."""
     if not data or not data.get("summary"):
         return None
     return (
@@ -107,6 +119,7 @@ def gen_summary(data: dict | None) -> str | None:
 
 
 def gen_experience(data: dict | None) -> str | None:
+    """Generate PROFESSIONAL EXPERIENCE (and optional INTERNSHIPS) from 10-experience.yml."""
     if not data or not isinstance(data.get("positions"), list):
         return None
 
@@ -128,6 +141,7 @@ def gen_experience(data: dict | None) -> str | None:
 
 
 def gen_education(data: dict | None) -> str | None:
+    """Generate the EDUCATION section from 40-education.yml."""
     if not data or not isinstance(data.get("schools"), list):
         return None
 
@@ -139,6 +153,7 @@ def gen_education(data: dict | None) -> str | None:
 
 
 def gen_projects(data: dict | None) -> str | None:
+    """Generate the PROJECTS section from 20-projects.yml."""
     if not data or not isinstance(data.get("projects"), list):
         return None
 
@@ -169,6 +184,7 @@ def gen_projects(data: dict | None) -> str | None:
 
 
 def gen_skills(data: dict | None) -> str | None:
+    """Generate the SKILLS section from 30-skills.yml."""
     if not data or not isinstance(data.get("skills"), list):
         return None
     rows = "\n".join(
@@ -184,6 +200,7 @@ def gen_skills(data: dict | None) -> str | None:
 
 
 def gen_languages(data: dict | None) -> str | None:
+    """Generate the LANGUAGES section from 50-languages.yml."""
     if not data or not isinstance(data.get("languages"), list):
         return None
     rows = "\n\n".join(
@@ -199,12 +216,12 @@ def gen_languages(data: dict | None) -> str | None:
 
 
 outputs = {
-    "00-summary.tex":  (gen_summary,    "00-summary.yml"),
+    "00-summary.tex":   (gen_summary,    "00-summary.yml"),
     "10-experience.tex": (gen_experience, "10-experience.yml"),
-    "20-projects.tex": (gen_projects,   "30-projects.yml"),
-    "30-skills.tex":   (gen_skills,     "40-skills.yml"),
-    "50-education.tex": (gen_education,  "20-education.yml"),
-    "60-languages.tex": (gen_languages,  "50-languages.yml"),
+    "20-projects.tex":  (gen_projects,   "20-projects.yml"),
+    "30-skills.tex":    (gen_skills,     "30-skills.yml"),
+    "40-education.tex": (gen_education,  "40-education.yml"),
+    "50-languages.tex": (gen_languages,  "50-languages.yml"),
 }
 
 for tex_file, (gen_fn, yml_file) in outputs.items():

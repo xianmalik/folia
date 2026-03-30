@@ -1,0 +1,22 @@
+name: Setup LaTeX + Python
+description: Install Python dependencies and XeLaTeX (shared between build and release workflows)
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      shell: bash
+      run: |
+        python3 -m pip install --upgrade pip
+        python3 -m pip install -r requirements.txt
+
+    - name: Install XeLaTeX
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y texlive-xetex texlive-fonts-recommended texlive-fonts-extra
