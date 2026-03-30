@@ -1,19 +1,27 @@
 skills:
   - category: Languages & Core
-    items: [TypeScript, JavaScript, Python, "Node.js", HTML5, CSS3]
+    items: [TypeScript, JavaScript, Python, HTML5, CSS3, Node.js]
+
+  - category: AI & Machine Learning
+    items: ["LLM Integration", "Agentic AI", "MCP (Model Context Protocol)", "Prompt Engineering", "ML Pipeline Integration", "Real-time ML Dashboards", "OpenAI API", "Anthropic API"]
+
+  - category: Frontend
+    items: [React, Next.js, Vue.js, Svelte, Zustand, Redux]
+
   - category: Backend & APIs
-    items: [ExpressJS, FastAPI, "RESTful API", WebSockets, Webhooks, JWT, OAuth, Postman]
-  - category: Frontend Frameworks
-    items: [ReactJS, NextJS, VueJS, Svelte, Gatsby]
-  - category: Styling & UI
-    items: [TailwindCSS, "Shadcn/ui", MaterialUI, "Ant Design", Bootstrap, "Scss & Less"]
+    items: [Express.js, FastAPI, Django, GraphQL, "RESTful API", WebSockets, JWT, OAuth, Redis, Prisma]
+
   - category: Database & Storage
     items: [PostgreSQL, MySQL, MongoDB, Firebase, Supabase, "Sanity Studio"]
-  - category: AI & Machine Learning
-    items: ["LLM Integration", "Prompt Engineering", "Agentic AI", MCP, "ML Pipeline Integration"]
+
+  - category: Styling & UI
+    items: [TailwindCSS, "Shadcn/ui", MaterialUI, "Ant Design", Bootstrap, "SCSS & Less"]
+
   - category: DevOps & Cloud
-    items: [Git, "GitHub Actions", Docker, AWS, "CI/CD Pipelines"]
+    items: [Docker, AWS, "GitHub Actions", "CI/CD Pipelines", Git, Sentry]
+
   - category: Testing & Build
     items: [Jest, Storybook, Vite, Webpack, Babel]
+
   - category: Project Management
     items: [Agile, Scrum, Jira, Notion, Kanban]
