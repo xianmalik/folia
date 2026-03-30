@@ -5,13 +5,14 @@ No-op if data directory or files are missing, or if PyYAML is unavailable.
 """
 from __future__ import annotations
 
-import os
+import re
 import sys
 from pathlib import Path
 
 try:
     import yaml  # type: ignore
-except Exception:
+except ImportError:
+    print("generate.py: PyYAML not installed — skipping generation", file=sys.stderr)
     sys.exit(0)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -22,13 +23,14 @@ if not DATA_DIR.exists() or not SECTIONS_DIR.exists():
     sys.exit(0)
 
 
-def read_yaml(filename: str):
+def read_yaml(filename: str) -> dict | None:
     path = DATA_DIR / filename
     if not path.exists():
         return None
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception:
+    except yaml.YAMLError as e:
+        print(f"generate.py: failed to parse {filename} — {e}", file=sys.stderr)
         return None
 
 
@@ -36,15 +38,9 @@ def write_file(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def latex_escape(s: str) -> str:
-    # First, handle any special formatting patterns by converting them to temporary placeholders
-    s = str(s)
-    # Support for bold formatting using [[bold text]] pattern
-    # Use temporary placeholders that are unlikely to appear in normal text and contain no special characters
-    s = s.replace("[[", "BOLDSTART9E8F7A").replace("]]", "BOLDEND9E8F7A")
-
-    # Now escape all LaTeX special characters
-    s = (
+def _escape_special(s: str) -> str:
+    """Escape LaTeX special characters in a plain string."""
+    return (
         s
         .replace("\\", "\\textbackslash{}")
         .replace("%", "\\%")
@@ -56,13 +52,50 @@ def latex_escape(s: str) -> str:
         .replace("$", "\\$")
     )
 
-    # Finally, convert the temporary placeholders back to LaTeX bold commands
-    s = s.replace("BOLDSTART9E8F7A", "\\textbf{").replace("BOLDEND9E8F7A", "}")
 
-    return s
+def latex_escape(s: str) -> str:
+    """Escape a string for LaTeX, converting [[text]] to \\textbf{text}."""
+    s = str(s)
+    parts = re.split(r"(\[\[.*?\]\])", s)
+    result = []
+    for part in parts:
+        if part.startswith("[[") and part.endswith("]]"):
+            result.append(f"\\textbf{{{_escape_special(part[2:-2])}}}")
+        else:
+            result.append(_escape_special(part))
+    return "".join(result)
 
 
-def gen_summary(data):
+def _build_cventry(entry: dict, title_key: str, org_key: str) -> str:
+    """Render a single \\cventry block from an entry dict."""
+    bullets = "\n".join(
+        f"        \\item {{{latex_escape(t)}}}" for t in entry.get("items", [])
+    )
+    return (
+        "  \\cventry\n"
+        f"    {{{latex_escape(entry.get(title_key, ''))}}}\n"
+        f"    {{{latex_escape(entry.get(org_key, ''))}}}\n"
+        f"    {{{latex_escape(entry.get('location', ''))}}}\n"
+        f"    {{{latex_escape(entry.get('dates', ''))}}}\n"
+        "    {\n"
+        "      \\begin{cvitems}\n"
+        f"{bullets}\n"
+        "      \\end{cvitems}\n"
+        "    }"
+    )
+
+
+def _wrap_section(title: str, body: str) -> str:
+    """Wrap a body in a cvsection + cventries block."""
+    return (
+        f"\\cvsection{{{title}}}\n\n"
+        "\\begin{cventries}\n\n"
+        f"{body}\n\n"
+        "\\end{cventries}\n"
+    )
+
+
+def gen_summary(data: dict | None) -> str | None:
     if not data or not data.get("summary"):
         return None
     return (
@@ -73,98 +106,39 @@ def gen_summary(data):
     )
 
 
-def gen_experience(data):
+def gen_experience(data: dict | None) -> str | None:
     if not data or not isinstance(data.get("positions"), list):
         return None
 
-    chunks = []
-    for p in data["positions"]:
-        bullets = "\n".join(
-            f"                \\item {{{latex_escape(t)}}}" for t in p.get("items", [])
-        )
-        chunks.append(
-            "    \\cventry\n"
-            f"        {{{latex_escape(p.get('title', ''))}}}\n"
-            f"        {{{latex_escape(p.get('company', ''))}}}\n"
-            f"        {{{latex_escape(p.get('location', ''))}}}\n"
-            f"        {{{latex_escape(p.get('dates', ''))}}}\n"
-            "        {\n"
-            "            \\begin{cvitems}\n"
-            f"{bullets}\n"
-            "            \\end{cvitems}\n"
-            "        }"
-        )
-
-    body = "\n\n".join(chunks)
-    tex = (
-        "\\cvsection{PROFESSIONAL EXPERIENCE}\n\n"
-        "\\begin{cventries}\n\n"
-        f"{body}\n\n"
-        "\\end{cventries}\n"
+    body = "\n\n".join(
+        _build_cventry(p, title_key="title", org_key="company")
+        for p in data["positions"]
     )
+    tex = _wrap_section("PROFESSIONAL EXPERIENCE", body)
 
     internships = data.get("internships")
     if isinstance(internships, list) and internships:
-        ichunks = []
-        for p in internships:
-            bullets = "\n".join(
-                f"                \\item {{{latex_escape(t)}}}" for t in p.get("items", [])
-            )
-            ichunks.append(
-                "    \\cventry\n"
-                f"        {{{latex_escape(p.get('title', ''))}}}\n"
-                f"        {{{latex_escape(p.get('company', ''))}}}\n"
-                f"        {{{latex_escape(p.get('location', ''))}}}\n"
-                f"        {{{latex_escape(p.get('dates', ''))}}}\n"
-                "        {\n"
-                "            \\begin{cvitems}\n"
-                f"{bullets}\n"
-                "            \\end{cvitems}\n"
-                "        }"
-            )
-        ibody = "\n\n".join(ichunks)
-        tex += (
-            "\n\\cvsection{INTERNSHIPS}\n\n"
-            "\\begin{cventries}\n\n"
-            f"{ibody}\n\n"
-            "\\end{cventries}\n"
+        ibody = "\n\n".join(
+            _build_cventry(p, title_key="title", org_key="company")
+            for p in internships
         )
+        tex += "\n" + _wrap_section("INTERNSHIPS", ibody)
 
     return tex
 
 
-def gen_education(data):
+def gen_education(data: dict | None) -> str | None:
     if not data or not isinstance(data.get("schools"), list):
         return None
 
-    chunks = []
-    for s in data["schools"]:
-        bullets = "\n".join(
-            f"        \\item {{{latex_escape(t)}}}" for t in s.get("items", [])
-        )
-        chunks.append(
-            "  \\cventry\n"
-            f"    {{{latex_escape(s.get('degree', ''))}}} \n"
-            f"    {{{latex_escape(s.get('institution', ''))}}} \n"
-            f"    {{{latex_escape(s.get('location', ''))}}} \n"
-            f"    {{{latex_escape(s.get('dates', ''))}}} \n"
-            "    {\n"
-            "      \\begin{cvitems}\n"
-            f"{bullets}\n"
-            "      \\end{cvitems}\n"
-            "    }"
-        )
-
-    body = "\n\n".join(chunks)
-    return (
-        "\\cvsection{EDUCATION}\n\n"
-        "\\begin{cventries}\n\n"
-        f"{body}\n\n"
-        "\\end{cventries}\n"
+    body = "\n\n".join(
+        _build_cventry(s, title_key="degree", org_key="institution")
+        for s in data["schools"]
     )
+    return _wrap_section("EDUCATION", body)
 
 
-def gen_projects(data):
+def gen_projects(data: dict | None) -> str | None:
     if not data or not isinstance(data.get("projects"), list):
         return None
 
@@ -191,15 +165,10 @@ def gen_projects(data):
         )
 
     body = "\n\n".join(chunks)
-    return (
-        "\\cvsection{PROJECTS}\n\n"
-        "\\begin{cventries}\n\n"
-        f"{body}\n\n"
-        "\\end{cventries}\n"
-    )
+    return _wrap_section("PROJECTS", body)
 
 
-def gen_skills(data):
+def gen_skills(data: dict | None) -> str | None:
     if not data or not isinstance(data.get("skills"), list):
         return None
     rows = "\n".join(
@@ -214,7 +183,7 @@ def gen_skills(data):
     )
 
 
-def gen_languages(data):
+def gen_languages(data: dict | None) -> str | None:
     if not data or not isinstance(data.get("languages"), list):
         return None
     rows = "\n\n".join(
@@ -229,25 +198,21 @@ def gen_languages(data):
     )
 
 
-summary = read_yaml("00-summary.yml")
-experience = read_yaml("10-experience.yml")
-projects = read_yaml("30-projects.yml")
-skills = read_yaml("40-skills.yml")
-education = read_yaml("20-education.yml")
-languages = read_yaml("50-languages.yml")
-
 outputs = {
-    "00-summary.tex": gen_summary(summary),
-    "10-experience.tex": gen_experience(experience),
-    "20-projects.tex": gen_projects(projects),
-    "30-skills.tex": gen_skills(skills),
-    "50-education.tex": gen_education(education),
-    "60-languages.tex": gen_languages(languages),
+    "00-summary.tex":  (gen_summary,    "00-summary.yml"),
+    "10-experience.tex": (gen_experience, "10-experience.yml"),
+    "20-projects.tex": (gen_projects,   "30-projects.yml"),
+    "30-skills.tex":   (gen_skills,     "40-skills.yml"),
+    "50-education.tex": (gen_education,  "20-education.yml"),
+    "60-languages.tex": (gen_languages,  "50-languages.yml"),
 }
 
-for filename, content in outputs.items():
+for tex_file, (gen_fn, yml_file) in outputs.items():
+    data = read_yaml(yml_file)
+    content = gen_fn(data)
     if content:
-        write_file(SECTIONS_DIR / filename, content)
+        write_file(SECTIONS_DIR / tex_file, content)
+    elif data is not None:
+        print(f"generate.py: {yml_file} loaded but produced no output — check required fields", file=sys.stderr)
 
 sys.exit(0)
-

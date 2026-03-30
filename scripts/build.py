@@ -127,25 +127,6 @@ def run_step_with_spinner(title: str, work_fn, color: str = GREEN) -> any:
     return result_container["value"]
 
 
-def compile_xelatex() -> int:
-    # Run xelatex in dist directory, capture output to resume.log
-    log_path = os.path.join("dist", "resume.log")
-    with open(log_path, "w") as log_file:
-        process = subprocess.Popen(
-            [
-                "xelatex",
-                "-interaction=nonstopmode",
-                "-output-directory=dist",
-                "resume.tex",
-            ],
-            stdout=log_file,
-            stderr=subprocess.STDOUT,
-        )
-
-        # Wait for completion
-        process.wait()
-        return process.returncode or 0
-
 
 def cleanup_aux_files() -> None:
     patterns = [
@@ -225,7 +206,7 @@ def main() -> int:
 
 
 def _print_latex_errors(log_path: str) -> None:
-    """Parse XeLaTeX log and print the first few error lines to stdout."""
+    """Parse XeLaTeX log and print each error with surrounding context."""
     try:
         with open(log_path, "r", errors="replace") as f:
             lines = f.readlines()
@@ -233,13 +214,26 @@ def _print_latex_errors(log_path: str) -> None:
         print(f"{GRAY}Log file not found: {log_path}{NC}")
         return
 
-    error_lines = [l for l in lines if l.startswith("!")]
-    if error_lines:
-        print(f"{YELLOW}LaTeX errors:{NC}")
-        for line in error_lines[:5]:
-            print(f"  {RED}{line.rstrip()}{NC}")
-    else:
+    error_indices = [i for i, l in enumerate(lines) if l.startswith("!")]
+    if not error_indices:
         print(f"{GRAY}See {log_path} for details{NC}")
+        return
+
+    print(f"{YELLOW}LaTeX errors:{NC}")
+    shown = set()
+    for idx in error_indices:
+        start = max(0, idx - 2)
+        end = min(len(lines), idx + 4)
+        for i in range(start, end):
+            if i in shown:
+                continue
+            shown.add(i)
+            line = lines[i].rstrip()
+            if lines[i].startswith("!"):
+                print(f"  {RED}{line}{NC}")
+            else:
+                print(f"  {GRAY}{line}{NC}")
+        print()
 
 
 if __name__ == "__main__":

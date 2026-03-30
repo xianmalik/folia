@@ -69,7 +69,7 @@ require_list(education, "20-education.yml", "schools",
 
 # 30-projects.yml
 projects = load("30-projects.yml")
-require_list(projects, "30-projects.yml", "projects", ["name"])
+require_list(projects, "30-projects.yml", "projects", ["name", "subtitle", "items", "tech"])
 
 # 40-skills.yml
 skills = load("40-skills.yml")
