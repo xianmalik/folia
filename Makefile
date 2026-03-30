@@ -1,7 +1,7 @@
 # Makefile for xianmalik_cv
 # Targets: build (default), watch, open, clean, deps, venv
 
-.PHONY: build watch open clean deps venv lint release docker-build
+.PHONY: build watch open clean deps venv lint format test release docker-build
 
 BUILD_SCRIPT := ./scripts/build.py
 PDF := dist/resume.pdf
@@ -31,6 +31,17 @@ clean:
 
 lint: deps
 	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/validate.py
+
+format: deps
+	@$(PIP) -q install black 2>/dev/null; \
+	 PATH="$(VENV_DIR)/bin:$$PATH" $(VENV_DIR)/bin/black scripts/
+
+test: deps
+	@echo "Running YAML validation..."
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/validate.py
+	@echo "Running generator smoke test..."
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/generate.py
+	@echo "All checks passed."
 
 release: deps
 	@[ -n "$(VERSION)" ] || { echo "Usage: make release VERSION=x.y.z"; exit 1; }

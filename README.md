@@ -66,23 +66,30 @@ python3 scripts/clean.py    # remove auxiliary files
 ├── sections/                # GENERATED TeX sections (do not edit)
 │   ├── 00-summary.tex
 │   ├── 10-experience.tex
-│   ├── 20-education.tex
-│   ├── 30-projects.tex
-│   ├── 40-skills.tex
+│   ├── 20-projects.tex
+│   ├── 30-skills.tex
+│   ├── 40-education.tex
 │   └── 50-languages.tex
 ├── data/                    # Source data (edit these)
 │   ├── 00-summary.yml
 │   ├── 10-experience.yml
-│   ├── 20-education.yml
-│   ├── 30-projects.yml
-│   ├── 40-skills.yml
+│   ├── 20-projects.yml
+│   ├── 30-skills.yml
+│   ├── 40-education.yml
 │   └── 50-languages.yml
+├── core/                    # Modular LaTeX class partials
+│   ├── fonts.tex
+│   ├── layout.tex
+│   ├── colors.tex
+│   ├── styles.tex
+│   ├── commands.tex
+│   └── structure.tex
 ├── font/                    # Inter fonts
 ├── dist/                    # Built PDF output
 ├── scripts/                 # Build & generator scripts
-├── requirements.txt         # Python deps (PyYAML)
+├── requirements.txt         # Python deps (PyYAML, watchdog)
 ├── resume.tex               # Main LaTeX file
-└── xianmalik.cls            # Custom CV class
+└── xianmalik.cls            # Custom CV class (loads core/)
 ```
 
 <p align="center">
@@ -110,9 +117,9 @@ python3 scripts/clean.py    # remove auxiliary files
 1) Edit your data only (do not edit `sections/*.tex`)
    - `data/00-summary.yml`
    - `data/10-experience.yml`
-   - `data/20-education.yml`
-   - `data/30-projects.yml`
-   - `data/40-skills.yml`
+   - `data/20-projects.yml`
+   - `data/30-skills.yml`
+   - `data/40-education.yml`
    - `data/50-languages.yml`
 
 2) Build
@@ -124,12 +131,32 @@ python3 scripts/build.py
 - PDF: `dist/resume.pdf`
 
 <p align="center">
+    <h2 align="center">Docker</h2>
+</p>
+
+No local TeX Live install required — build entirely inside Docker:
+
+```bash
+# Build the image
+docker build -t folia .
+
+# Run the build and extract the PDF into dist/
+docker run --rm -v "$(pwd)/dist:/app/dist" folia
+
+# Or use the Makefile shortcut
+make docker-build
+```
+
+The PDF will be written to `dist/resume.pdf` on your host.
+
+<p align="center">
     <h2 align="center">Customization</h2>
 </p>
 
-- **Colors**: Edit accent/text colors in `xianmalik.cls`
-- **Fonts**: Adjust Inter weights in `xianmalik.cls`
-- **Layout**: Tune geometry and spacing in `resume.tex` / class
+- **Colors**: Edit `core/colors.tex` — change `accentcolor`, text colors, or the section highlight toggle
+- **Fonts**: Edit `core/fonts.tex` — swap font weights or replace Inter
+- **Layout**: Edit `core/layout.tex` — adjust margins and header/footer setup, or override in `resume.tex`
+- **Styles**: Edit `core/styles.tex` — tweak font sizes for headers, entries, and skills
 - **Content**: Edit YAML in `data/` (generator writes `sections/*.tex`)
 
 <p align="center">

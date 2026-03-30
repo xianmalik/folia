@@ -18,9 +18,9 @@
 
 ## Polish / Dev Experience
 
-- [ ] Add `argparse` CLI to scripts — `python3 scripts/build.py --help` currently does nothing
-- [ ] Add `make test`, `make format`, `make lint` targets to Makefile
-- [ ] Watch mode: visually distinguish failed vs successful builds
-- [ ] Document Docker usage in README
-- [ ] Add pre-commit hooks (black, flake8, YAML validation)
-- [ ] Create `CUSTOMIZATION.md` — how to change colors, fonts, margins
+- [x] Add `argparse` CLI to scripts — `python3 scripts/build.py --help` currently does nothing
+- [x] Add `make test`, `make format`, `make lint` targets to Makefile
+- [x] Watch mode: visually distinguish failed vs successful builds
+- [x] Document Docker usage in README
+- [x] Add pre-commit hooks (black, flake8, YAML validation)
+- [x] Create `CUSTOMIZATION.md` — how to change colors, fonts, margins

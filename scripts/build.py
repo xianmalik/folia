@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import sys
 import glob
@@ -237,6 +238,27 @@ def _print_latex_errors(log_path: str) -> None:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser(
+        description="Build resume.tex → dist/resume.pdf using XeLaTeX.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  python3 scripts/build.py          # standard build\n"
+            "  python3 scripts/build.py --open   # build and open PDF\n"
+            "  make build                         # via Makefile"
+        ),
+    )
+    parser.add_argument(
+        "--open", action="store_true", help="open the PDF after a successful build"
+    )
+    args = parser.parse_args()
+    exit_code = main()
+    if exit_code == 0 and args.open:
+        pdf = os.path.join("dist", "resume.pdf")
+        if sys.platform == "darwin":
+            subprocess.run(["open", pdf], check=False)
+        else:
+            subprocess.run(["xdg-open", pdf], check=False)
+    sys.exit(exit_code)
 
 

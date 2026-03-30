@@ -7,7 +7,7 @@ from pathlib import Path
 
 try:
     from watchdog.observers import Observer
-    from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreatedEvent
+    from watchdog.events import FileSystemEventHandler
 except ImportError:
     print("watchdog not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
@@ -31,11 +31,14 @@ WATCHED_DIRS = {REPO_ROOT / "data"}
 def run_build() -> None:
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"\n{YELLOW}[{ts}] File changed, rebuilding...{NC}")
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "build.py")],
         check=False,
     )
-    print(f"{GREEN}✓ Done{NC}\n")
+    if result.returncode == 0:
+        print(f"{GREEN}✓ Build succeeded{NC}\n")
+    else:
+        print(f"{RED}✗ Build failed (exit {result.returncode}){NC}\n")
 
 
 class ResumeHandler(FileSystemEventHandler):
@@ -60,10 +63,13 @@ class ResumeHandler(FileSystemEventHandler):
 
 def main() -> int:
     print("Running initial build...")
-    subprocess.run(
+    result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "build.py")],
         check=False,
     )
+    if result.returncode != 0:
+        print(f"{RED}✗ Initial build failed{NC}")
+
     print("")
     print("Watching: resume.tex, xianmalik.cls, and data/*.yml ...")
     print("Will automatically rebuild when files are saved")
