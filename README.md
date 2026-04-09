@@ -3,14 +3,7 @@
 </p>
 
 <p align="center">
-    <img alt="Version" src="https://img.shields.io/badge/Version-1.1.0-pink?style=for-the-badge&labelColor=302D41&logo=git&logoColor=D9E0EE">
-</p>
-
-<p align="center">
-    Professional LaTeX CV Template powered by XeLaTeX & Inter Font Family
-</p>
-
-<p align="center">
+    <img alt="Version" src="https://img.shields.io/badge/Version-1.1.0-pink?style=for-the-badge&labelColor=302D41&logo=git&logoColor=D9E0EE"> 
     <!-- <a href="https://github.com/xianmalik/xianmalik_resume/issues">
         <img alt="Issues" src="https://img.shields.io/github/issues/xianmalik/xianmalik_resume?style=for-the-badge&logo=bilibili&color=F5E0DC&logoColor=D9E0EE&labelColor=302D41"></a> -->
     <a href="https://github.com/xianmalik/xianmalik_resume">
