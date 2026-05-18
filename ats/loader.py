@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 import sys
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -116,7 +117,8 @@ def _load_yaml(path: Path) -> dict:
         return {}
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
+    except yaml.YAMLError as e:
+        warnings.warn(f"Skipping {path}: {e}")
         return {}
 
 
@@ -200,4 +202,8 @@ def load(repo_root: Path | None = None) -> ResumeData:
         for lg in lang_data.get("languages", [])
     ]
 
+    if not resume.contact.full_name:
+        raise ValueError(
+            f"Could not parse a name from {tex_path} — check the \\name macro"
+        )
     return resume

@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .loader import ResumeData, Position
 from .date_parser import compute_years_experience
 from . import ontology as ont
+from . import config as _cfg
 
 _KEYWORDS_PATH = Path(__file__).parent / "data" / "keywords.json"
 _KW = json.loads(_KEYWORDS_PATH.read_text(encoding="utf-8"))
@@ -25,6 +25,21 @@ try:
     _HAS_RAPIDFUZZ = True
 except ImportError:
     _HAS_RAPIDFUZZ = False
+
+_JC = _cfg.get()["jd_match"]
+_W_KEYWORD         = _JC["weights"]["keyword"]
+_W_TITLE           = _JC["weights"]["title"]
+_W_EXP             = _JC["weights"]["experience"]
+_W_EDU             = _JC["weights"]["education"]
+_EXP_IDEAL         = _JC["experience_years"]["ideal"]
+_EXP_GOOD          = _JC["experience_years"]["good"]
+_EXP_OK            = _JC["experience_years"]["ok"]
+_EXP_PARTIAL       = _JC["experience_years"]["partial"]
+_KW_SCORE_DIRECT   = _JC["keyword_scores"]["direct"]
+_KW_SCORE_ONTOLOGY = _JC["keyword_scores"]["ontology"]
+_KW_SCORE_FUZZY    = _JC["keyword_scores"]["fuzzy"]
+_FUZZY_MIN_RATIO   = _JC["fuzzy_min_ratio"]
+_PASS_THRESHOLD    = _JC["pass_threshold"]
 
 _GENERIC_TERMS: set[str] = set(_KW["generic_terms"])
 _SENIORITY: set[str] = set(_KW["seniority"])
@@ -87,19 +102,11 @@ class JDResult:
 
 def _load_spacy():
     if not _HAS_SPACY:
-        print(
-            "jd_matcher: spaCy not installed — run: make ats-deps",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        raise RuntimeError("spaCy not installed — run: make ats-deps")
     try:
         return spacy.load("en_core_web_sm")
-    except OSError:
-        print(
-            "jd_matcher: spaCy model not found — run: make ats-deps",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    except OSError as e:
+        raise RuntimeError("spaCy model 'en_core_web_sm' not found — run: make ats-deps") from e
 
 
 _TITLE_WORDS: set[str] = set(_KW["title_words"])
@@ -137,35 +144,7 @@ def _extract_jd_title(text: str) -> str:
     return lines[0][:80] if lines else ""
 
 
-def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
-    """Extract technical keywords from a spaCy-processed JD document."""
-    implies_keys = set(ontology.get("implies", {}).keys())
-    alias_vals = set(ontology.get("aliases", {}).values())
-    known_tech: dict[str, str] = {ont.normalize(k): k for k in implies_keys | alias_vals}
-
-    seen_norms: set[str] = set()
-    keywords: list[str] = []
-
-    def _add(text: str) -> None:
-        text = " ".join(text.split())  # collapse all whitespace incl. newlines
-        if not text:
-            return
-        n = ont.normalize(text)
-        if n in seen_norms or len(n) <= 2 or n in _GENERIC_TERMS:
-            return
-        # For multi-word phrases, reject if any word is an HR/benefits term
-        words_lower = [w.lower().rstrip("s") for w in n.split()]
-        if len(words_lower) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_lower):
-            return
-        seen_norms.add(n)
-        keywords.append(text)
-
-    # Named entities (ORG, PRODUCT, LANGUAGE, GPE often contains tech names)
-    for ent in doc.ents:
-        if ent.label_ in ("ORG", "PRODUCT", "LANGUAGE", "GPE"):
-            _add(ent.text.strip())
-
-    # Noun chunks — short ones with at least one uppercase word or known tech term
+def _collect_noun_chunks(doc, known_tech: dict, add) -> None:
     for chunk in doc.noun_chunks:
         text = chunk.text.strip()
         words = text.split()
@@ -177,18 +156,48 @@ def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
         has_cap = any(w[0].isupper() for w in words if w)
         is_known = n in known_tech or any(ont.normalize(w) in known_tech for w in words)
         if has_cap or is_known:
-            _add(text)
+            add(text)
 
-    # Single PROPN/NOUN tokens — title-cased or known tech
+
+def _collect_tokens(doc, known_tech: dict, add) -> None:
     for token in doc:
         if token.pos_ in ("PROPN", "NOUN") and len(token.text) > 2:
             n = ont.normalize(token.text)
             if n in _GENERIC_TERMS or not token.is_alpha:
                 continue
             if token.text[0].isupper() or n in known_tech:
-                _add(token.text)
+                add(token.text)
 
-    # Also scan for explicit tech mentioned inline with special chars (e.g. "Node.js", "C++")
+
+def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
+    """Extract technical keywords from a spaCy-processed JD document."""
+    implies_keys = set(ontology.get("implies", {}).keys())
+    alias_vals = set(ontology.get("aliases", {}).values())
+    known_tech: dict[str, str] = {ont.normalize(k): k for k in implies_keys | alias_vals}
+
+    seen_norms: set[str] = set()
+    keywords: list[str] = []
+
+    def _add(text: str) -> None:
+        text = " ".join(text.split())  # collapse whitespace incl. newlines
+        if not text:
+            return
+        n = ont.normalize(text)
+        if n in seen_norms or len(n) <= 2 or n in _GENERIC_TERMS:
+            return
+        words_lower = [w.lower().rstrip("s") for w in n.split()]
+        if len(words_lower) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_lower):
+            return
+        seen_norms.add(n)
+        keywords.append(text)
+
+    for ent in doc.ents:
+        if ent.label_ in ("ORG", "PRODUCT", "LANGUAGE", "GPE"):
+            _add(ent.text.strip())
+
+    _collect_noun_chunks(doc, known_tech, _add)
+    _collect_tokens(doc, known_tech, _add)
+
     for m in _TECH_PATTERN.finditer(doc.text):
         _add(m.group(0))
 
@@ -225,22 +234,22 @@ def _score_keyword(
     kw_norm = ont.normalize(kw)
     found_in: list[str] = []
 
-    # Direct match
+    # Direct match (whole-word to prevent e.g. "java" matching "javascript")
     for section, text in section_texts.items():
-        if kw_norm in ont.normalize(text):
+        if re.search(rf"\b{re.escape(kw_norm)}\b", ont.normalize(text)):
             found_in.append(section)
     if found_in:
-        return 1.0, found_in, "direct"
+        return _KW_SCORE_DIRECT, found_in, "direct"
 
     # Ontology expansion match
     if kw_norm in expanded_norms:
-        return 0.7, ["skills"], "ontology"
+        return _KW_SCORE_ONTOLOGY, ["skills"], "ontology"
 
     # Fuzzy match against individual skill items (rapidfuzz)
     if _HAS_RAPIDFUZZ:
         for item in skill_items:
-            if _fuzz.ratio(kw_norm, ont.normalize(item)) >= 85:
-                return 0.4, ["skills"], "fuzzy"
+            if _fuzz.ratio(kw_norm, ont.normalize(item)) >= _FUZZY_MIN_RATIO:
+                return _KW_SCORE_FUZZY, ["skills"], "fuzzy"
 
     return 0.0, [], "none"
 
@@ -295,13 +304,13 @@ def _experience_score(resume: ResumeData, jd_text: str) -> tuple[float, float]:
         else:
             score = 25.0
     else:
-        if years >= 8:
+        if years >= _EXP_IDEAL:
             score = 100.0
-        elif years >= 5:
+        elif years >= _EXP_GOOD:
             score = 90.0
-        elif years >= 3:
+        elif years >= _EXP_OK:
             score = 70.0
-        elif years >= 1:
+        elif years >= _EXP_PARTIAL:
             score = 40.0
         else:
             score = 10.0
@@ -342,7 +351,7 @@ def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[
 
     if jd_req > 0:
         if highest >= jd_req:
-            score = min(100.0, 100.0 + cs_bonus)
+            score = min(100.0, highest + cs_bonus)
             gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
                          jd_required=jd_req_kw, jd_required_level=jd_req,
                          resume_level_score=highest, cs_bonus=cs_bonus, matched=True)
@@ -361,7 +370,9 @@ def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[
     return min(100.0, highest + cs_bonus), None
 
 
-def run(resume: ResumeData, jd_text: str, threshold: float = 70.0) -> JDResult:
+def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) -> JDResult:
+    if not jd_text or not jd_text.strip():
+        raise ValueError("jd_text must not be empty")
     nlp = _load_spacy()
     ontology = ont.load_ontology()
 
@@ -396,10 +407,10 @@ def run(resume: ResumeData, jd_text: str, threshold: float = 70.0) -> JDResult:
     edu_score, edu_gap = _education_score(resume, jd_text, ontology)
 
     overall = (
-        keyword_score * 0.40
-        + title_score * 0.25
-        + exp_score * 0.20
-        + edu_score * 0.15
+        keyword_score * _W_KEYWORD
+        + title_score * _W_TITLE
+        + exp_score * _W_EXP
+        + edu_score * _W_EDU
     )
 
     return JDResult(

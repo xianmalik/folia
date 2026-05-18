@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Skill ontology: canonical names, transitive implication, and normalization."""
 from __future__ import annotations
 
 import json
@@ -9,17 +10,37 @@ from pathlib import Path
 _ONTOLOGY_PATH = Path(__file__).parent / "data" / "ontology.json"
 _CACHED: dict | None = None
 
+# Languages whose identity would be erased by the generic stripping pass.
+_SPECIAL_LANG_NAMES: dict[str, str] = {
+    "c++": "cpp",
+    "c#": "csharp",
+    "f#": "fsharp",
+}
+
 
 def load_ontology() -> dict:
     global _CACHED
     if _CACHED is None:
-        _CACHED = json.loads(_ONTOLOGY_PATH.read_text(encoding="utf-8"))
+        data = json.loads(_ONTOLOGY_PATH.read_text(encoding="utf-8"))
+        if "implies" not in data or "aliases" not in data:
+            raise ValueError(
+                f"ontology.json is missing required keys ('implies', 'aliases'): {_ONTOLOGY_PATH}"
+            )
+        _CACHED = data
     return _CACHED
+
+
+def _reset_cache() -> None:
+    """Clear the cached ontology — intended for use in tests only."""
+    global _CACHED
+    _CACHED = None
 
 
 def normalize(term: str) -> str:
     """Lowercase, collapse dots/hyphens/slashes, strip non-word chars, trim."""
     s = term.lower().strip()
+    if s in _SPECIAL_LANG_NAMES:
+        return _SPECIAL_LANG_NAMES[s]
     s = re.sub(r"[.\-/+]", "", s)
     s = re.sub(r"[^\w\s]", "", s)
     s = re.sub(r"\s+", " ", s).strip()

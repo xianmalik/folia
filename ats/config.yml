@@ -1,0 +1,42 @@
+# ATS configuration — edit these values to tune scoring behaviour.
+# All changes take effect on the next run (no code changes needed).
+
+health:
+  pass_threshold: 70.0          # minimum score to pass the health check
+  min_bullets_per_role: 4       # target bullet points per work role
+  min_bullet_words: 15          # minimum words per bullet for full score
+  action_verb_ratio_good: 0.80  # fraction of bullets that should start with an action verb
+  min_skills_total: 25          # total skill items across all categories
+  min_skill_categories: 5       # number of distinct skill categories
+  max_category_share: 0.35      # max fraction any single category can occupy
+  summary_word_min: 40          # summary too short below this
+  summary_word_max: 80          # summary too long above this
+  min_tech_keywords: 6          # distinct tech keywords expected in summary
+  min_impact_phrases: 3         # impact phrases expected in summary
+
+jd_match:
+  pass_threshold: 70.0          # minimum overall score to pass JD matching
+  weights:
+    keyword: 0.40               # keyword match component weight (must sum to 1.0)
+    title: 0.25
+    experience: 0.20
+    education: 0.15
+  experience_years:
+    ideal: 8                    # years of experience for a perfect experience score
+    good: 5
+    ok: 3
+    partial: 1
+  keyword_scores:
+    direct: 1.00                # score for an exact keyword match in resume text
+    ontology: 0.70              # score for a match via ontology implication
+    fuzzy: 0.40                 # score for a fuzzy string match
+  fuzzy_min_ratio: 85           # minimum rapidfuzz ratio (0-100) to count as a match
+
+renderer:
+  thresh_pass: 0.90             # ratio at or above which a check shows a ✓
+  thresh_good: 0.80             # ratio at or above which score bar is green
+  thresh_warn: 0.76             # ratio at or above which score bar is yellow (below = red)
+
+date_parser:
+  year_min: 1950                # earliest plausible year in a date range
+  year_max: 2050                # latest plausible year in a date range

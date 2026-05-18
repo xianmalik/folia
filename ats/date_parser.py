@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import re
+import warnings
 from datetime import date
 from typing import NamedTuple
+
+from . import config as _cfg
 
 MONTHS: dict[str, int] = {
     "january": 1, "february": 2, "march": 3, "april": 4,
@@ -13,6 +16,10 @@ MONTHS: dict[str, int] = {
     "jun": 6, "jul": 7, "aug": 8,
     "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
+
+_DC = _cfg.get()["date_parser"]
+_YEAR_MIN = _DC["year_min"]
+_YEAR_MAX = _DC["year_max"]
 
 
 class DateRange(NamedTuple):
@@ -29,11 +36,14 @@ def _parse_single(s: str) -> date | None:
     m = re.match(r"([a-z]+)\s+(\d{4})$", s)
     if m:
         month = MONTHS.get(m.group(1))
-        if month:
-            return date(int(m.group(2)), month, 1)
+        year = int(m.group(2))
+        if month and _YEAR_MIN <= year <= _YEAR_MAX:
+            return date(year, month, 1)
     m = re.match(r"(\d{4})$", s)
     if m:
-        return date(int(m.group(1)), 1, 1)
+        year = int(m.group(1))
+        if _YEAR_MIN <= year <= _YEAR_MAX:
+            return date(year, 1, 1)
     return None
 
 
@@ -61,6 +71,7 @@ def compute_years_experience(positions: list) -> float:
     for pos in positions:
         dr = parse_date_range(pos.dates)
         if not dr.parseable:
+            warnings.warn(f"Skipping unparseable date range: {dr.raw!r}")
             continue
         end = dr.end if dr.end is not None else today
         spans.append([dr.start, end])
