@@ -334,3 +334,6 @@ TSWLatexianTemp*
 
 # Build output
 dist/
+
+# Job Description Files
+jd/

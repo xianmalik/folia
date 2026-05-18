@@ -163,36 +163,48 @@ def _render_jd(result) -> None:
         ontology = [m for m in result.matched_keywords if m.matched_via == "ontology"]
         fuzzy = [m for m in result.matched_keywords if m.matched_via == "fuzzy"]
 
-        print(f"  {_c(BOLD)}{_c(GREEN)}Matched Keywords:{_c(NC)}")
+        print(f"  {_c(GRAY)}{'─' * 60}{_c(NC)}")
+        print(f"  {_c(BOLD)}{_c(GREEN)}Matched Keywords{_c(NC)}")
+        print(f"  {_c(GRAY)}{'─' * 60}{_c(NC)}")
         if direct:
             kws = ", ".join(m.keyword for m in direct)
-            print(f"  {_c(GREEN)}  Direct   {_c(NC)}{kws}")
+            print(f"  {_c(GREEN)}  ✓ Direct   {_c(NC)}{kws}")
         if ontology:
             kws = ", ".join(m.keyword for m in ontology)
-            print(f"  {_c(YELLOW)}  Ontology {_c(NC)}{_c(GRAY)}(implied){_c(NC)} {kws}")
+            print(f"  {_c(YELLOW)}  ~ Ontology {_c(NC)}{_c(GRAY)}(implied){_c(NC)} {kws}")
         if fuzzy:
             kws = ", ".join(m.keyword for m in fuzzy)
-            print(f"  {_c(YELLOW)}  Fuzzy    {_c(NC)}{_c(GRAY)}(≈match){_c(NC)}  {kws}")
+            print(f"  {_c(YELLOW)}  ≈ Fuzzy    {_c(NC)}{_c(GRAY)}(≈match){_c(NC)}  {kws}")
+        print(f"  {_c(GRAY)}{'─' * 60}{_c(NC)}")
         print()
 
-    # Missing keywords
+    # Missing keywords — boxed
     if result.missing_keywords:
-        print(f"  {_c(BOLD)}{_c(RED)}Missing Keywords:{_c(NC)}")
         kws = ", ".join(result.missing_keywords)
-        # Word-wrap at ~60 chars
         words = kws.split(", ")
         line, lines = [], []
         for w in words:
             line.append(w)
-            if len(", ".join(line)) > 58:
+            if len(", ".join(line)) > 54:
                 lines.append(", ".join(line[:-1]))
                 line = [w]
         if line:
             lines.append(", ".join(line))
+
+        box_w = 58
+        print(f"  {_c(RED)}╭{'─' * box_w}╮{_c(NC)}")
+        print(f"  {_c(RED)}│{_c(BOLD)}{_c(WHITE)}  Missing Keywords{' ' * (box_w - 17)}{_c(NC)}{_c(RED)}│{_c(NC)}")
+        print(f"  {_c(RED)}├{'─' * box_w}┤{_c(NC)}")
         for ln in lines:
-            print(f"  {_c(RED)}  {ln}{_c(NC)}")
+            pad = box_w - 2 - len(ln)
+            print(f"  {_c(RED)}│{_c(NC)}  {_c(RED)}{ln}{_c(NC)}{' ' * max(pad, 0)}  {_c(RED)}│{_c(NC)}")
+        print(f"  {_c(RED)}╰{'─' * box_w}╯{_c(NC)}")
         print()
-        print(f"  {_c(GRAY)}Tip: add missing keywords naturally to your experience bullets.{_c(NC)}")
+
+        # Suggestion highlight
+        print(f"  {_c(GRAY)}{'─' * 60}{_c(NC)}")
+        print(f"  {_c(YELLOW)}💡  Suggestion:{_c(NC)} add missing keywords naturally to your experience bullets.")
+        print(f"  {_c(GRAY)}{'─' * 60}{_c(NC)}")
         print()
 
     _render_threshold_note(result)

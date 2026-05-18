@@ -57,12 +57,15 @@ docker-build:
 
 ats-deps: deps
 	@$(PY) -c "import spacy; spacy.load('en_core_web_sm')" >/dev/null 2>&1 || \
-	 { $(PIP) install -r requirements.txt && $(PY) -m spacy download en_core_web_sm; }
+	 { printf "Installing prerequisites... "; \
+	   $(PIP) install -r requirements.txt >/dev/null 2>&1 && \
+	   $(PY) -m spacy download en_core_web_sm >/dev/null 2>&1 && \
+	   printf "✓\n"; }
 
 ats: deps
 	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py
 
 ats-jd: ats-deps
 	@[ -n "$(JD)" ] || { echo "Usage: make ats-jd JD=path/to/jd.txt"; exit 1; }
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)"
+	-@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)"
 

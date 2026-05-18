@@ -92,12 +92,27 @@ def _extract_jd_title(text: str) -> str:
         "full-stack", "software", "mobile", "data", "devops", "sre", "qa",
     }
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-    for line in lines[:8]:
+
+    # First pass: short heading-style lines with a known title word (wider window)
+    for line in lines[:30]:
         words = line.split()
         if 1 <= len(words) <= 8 and not line.endswith((".", "?", "!")):
             if any(w.lower().rstrip(",;-") in title_words for w in words):
-                # Strip surrounding punctuation from whole line
                 return line.strip(":-–—|/\\").strip()
+
+    # Second pass: regex scan for "looking for a/an <title>" or "hiring a/an <title>"
+    role_pattern = re.compile(
+        r"(?:looking for|hiring|seeking|need(?:ing)?)\s+(?:an?\s+)?([A-Za-z][\w\s\-/]{2,40}?)(?:\s+who|\s+to|\s+with|[,.]|$)",
+        re.IGNORECASE,
+    )
+    for line in lines[:30]:
+        m = role_pattern.search(line)
+        if m:
+            candidate = m.group(1).strip()
+            cwords = candidate.split()
+            if 1 <= len(cwords) <= 6 and any(w.lower().rstrip("s") in title_words for w in cwords):
+                return candidate
+
     return lines[0][:80] if lines else ""
 
 
@@ -111,6 +126,9 @@ def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
     keywords: list[str] = []
 
     def _add(text: str) -> None:
+        text = " ".join(text.split())  # collapse all whitespace incl. newlines
+        if not text:
+            return
         n = ont.normalize(text)
         if n in seen_norms or len(n) <= 2 or n in _GENERIC_TERMS:
             return
@@ -208,17 +226,33 @@ def _score_keyword(
     return 0.0, [], "none"
 
 
+# Terms treated as equivalent when comparing JD title to resume titles
+_ROLE_EQUIV: dict[str, str] = {
+    "developer": "engineer",
+    "developers": "engineer",
+    "programmer": "engineer",
+    "programmers": "engineer",
+    "coder": "engineer",
+    "dev": "engineer",
+}
+
+
+def _normalize_title_tokens(tokens: set[str]) -> set[str]:
+    """Map role synonyms to a canonical token so Jaccard can match across terms."""
+    return {_ROLE_EQUIV.get(t, t) for t in tokens}
+
+
 def _title_score(jd_title: str, positions: list[Position]) -> float:
     if not jd_title or not positions:
         return 50.0
 
-    jd_tokens = set(ont.normalize(jd_title).split()) - _SENIORITY
+    jd_tokens = _normalize_title_tokens(set(ont.normalize(jd_title).split()) - _SENIORITY)
     if not jd_tokens:
         return 50.0
 
     best = 0.0
     for pos in positions:
-        pos_tokens = set(ont.normalize(pos.title).split()) - _SENIORITY
+        pos_tokens = _normalize_title_tokens(set(ont.normalize(pos.title).split()) - _SENIORITY)
         if not pos_tokens:
             continue
         inter = jd_tokens & pos_tokens
