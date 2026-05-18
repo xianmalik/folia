@@ -341,27 +341,65 @@ def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[
     jd_lower = jd_text.lower()
     jd_req = 0.0
     jd_req_kw = ""
+    jd_preferred = 0.0  # highest level when JD offers alternatives via "or"
+    jd_is_flexible = False  # True when JD accepts a range (e.g. "Bachelor or Master")
+
+    # Collect all edu keywords found in the JD with their positions
+    jd_found: list[tuple[str, float, int]] = []  # (keyword, level, pos)
     for keyword, level in edu_levels.items():
-        if keyword in jd_lower and float(level) > jd_req:
-            jd_req = float(level)
-            jd_req_kw = keyword
+        pos = jd_lower.find(keyword)
+        if pos != -1:
+            jd_found.append((keyword, float(level), pos))
+
+    if jd_found:
+        # Check if multiple degree keywords appear within ~120 chars of each other
+        # with "or" between them — indicating flexible requirements
+        jd_found.sort(key=lambda x: x[2])  # sort by position
+        if len(jd_found) >= 2:
+            for i in range(len(jd_found) - 1):
+                kw_a, lvl_a, pos_a = jd_found[i]
+                kw_b, lvl_b, pos_b = jd_found[i + 1]
+                span = jd_lower[pos_a: pos_b + len(kw_b)]
+                if "or" in span and (pos_b - pos_a) <= 120:
+                    jd_is_flexible = True
+                    jd_req = min(lvl_a, lvl_b)
+                    jd_preferred = max(lvl_a, lvl_b)
+                    jd_req_kw = kw_a if lvl_a < lvl_b else kw_b
+                    break
+
+        if not jd_is_flexible:
+            # No "or" alternative — take the highest mentioned as strict requirement
+            for keyword, level, _ in jd_found:
+                if level > jd_req:
+                    jd_req = level
+                    jd_req_kw = keyword
 
     resume_field = cs_match or ""
     resume_degree = resume.schools[0].degree if resume.schools else ""
 
     if jd_req > 0:
         if highest >= jd_req:
-            score = min(100.0, highest + cs_bonus)
+            if jd_is_flexible and jd_preferred > jd_req and highest < jd_preferred:
+                # Meets the minimum of a flexible "X or Y" requirement but not the preferred higher degree
+                # Penalty proportional to the gap between min and preferred on the degree ladder
+                ladder_gap = jd_preferred - jd_req
+                light_penalty = min(12.0, round(ladder_gap * 0.3, 1))
+                score = min(100.0, 100.0 - light_penalty + cs_bonus)
+            else:
+                # Exactly meets or exceeds the requirement
+                score = min(100.0, 100.0 + cs_bonus)
             gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
                          jd_required=jd_req_kw, jd_required_level=jd_req,
                          resume_level_score=highest, cs_bonus=cs_bonus, matched=True)
-        elif highest >= jd_req - 30:
-            score = min(100.0, 65.0 + cs_bonus)
-            gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
-                         jd_required=jd_req_kw, jd_required_level=jd_req,
-                         resume_level_score=highest, cs_bonus=cs_bonus, matched=False)
         else:
-            score = min(100.0, 30.0 + cs_bonus)
+            # Does not meet the stated requirement — heavy penalty proportional to how far below
+            degree_gap = jd_req - highest
+            if degree_gap <= 30:
+                # One step below (e.g. BSc vs Masters-only JD)
+                score = min(100.0, 50.0 + cs_bonus)
+            else:
+                # Two or more steps below (e.g. BSc vs PhD-only JD)
+                score = min(100.0, 25.0 + cs_bonus)
             gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
                          jd_required=jd_req_kw, jd_required_level=jd_req,
                          resume_level_score=highest, cs_bonus=cs_bonus, matched=False)
