@@ -120,10 +120,18 @@ def _render_health(result, use_color: bool) -> None:
 
 def _render_jd(result, use_color: bool) -> None:
     c = lambda code: _c(code, use_color)
+    BOX_W = 76
+    author = getattr(result, "author_name", "")
+    title_text = "  folia · ATS Score vs Job Description"
+    title_pad = BOX_W - len(title_text)
     print()
-    print(f"{c(CYAN)}╭{'─' * 76}╮{c(NC)}")
-    print(f"{c(CYAN)}│{c(WHITE)}  folia · ATS Score vs Job Description{c(GRAY)}                                 {c(CYAN)}│{c(NC)}")
-    print(f"{c(CYAN)}╰{'─' * 76}╯{c(NC)}")
+    print(f"{c(CYAN)}╭{'─' * BOX_W}╮{c(NC)}")
+    print(f"{c(CYAN)}│{c(WHITE)}{title_text}{' ' * max(title_pad, 0)}{c(CYAN)}│{c(NC)}")
+    if author:
+        author_text = f"  Author: {author}"
+        author_pad = BOX_W - len(author_text)
+        print(f"{c(CYAN)}│{c(GRAY)}{author_text}{' ' * max(author_pad, 0)}{c(CYAN)}│{c(NC)}")
+    print(f"{c(CYAN)}╰{'─' * BOX_W}╯{c(NC)}")
     print()
 
     if result.jd_title:
@@ -170,15 +178,15 @@ def _render_jd(result, use_color: bool) -> None:
             print(f"  {c(GRAY)}Education:{c(NC)} {c(YELLOW)}⚠ {resume_label}{cs_note} · JD prefers {g.jd_required.title()} (score gap: {g.jd_required_level - g.resume_level_score:.0f} pts){c(NC)}")
     print()
 
-    BOX_W = 76
     CONTENT_W = BOX_W - 4
 
-    def _wrap(words: list[str]) -> list[str]:
+    def _wrap(words: list[str], indent: int = 0) -> list[str]:
+        max_w = CONTENT_W - indent
         line: list[str] = []
         lines: list[str] = []
         for w in words:
             line.append(w)
-            if len(", ".join(line)) > CONTENT_W:
+            if len(", ".join(line)) > max_w:
                 lines.append(", ".join(line[:-1]))
                 line = [w]
         if line:
@@ -216,10 +224,10 @@ def _render_jd(result, use_color: bool) -> None:
                 continue
             pad = CONTENT_W - len(label)
             print(f"  {c(GREEN)}│{c(NC)}  {c(col)}{c(BOLD)}{label}{c(NC)}{' ' * max(pad, 0)}  {c(GREEN)}│{c(NC)}")
-            for ln in _wrap([m.keyword for m in group]):
-                indent = "    "
-                pad = CONTENT_W - len(indent) - len(ln)
-                print(f"  {c(GREEN)}│{c(NC)}  {indent}{ln}{' ' * max(pad, 0)}  {c(GREEN)}│{c(NC)}")
+            kw_indent = "    "
+            for ln in _wrap([m.keyword for m in group], indent=len(kw_indent)):
+                pad = CONTENT_W - len(kw_indent) - len(ln)
+                print(f"  {c(GREEN)}│{c(NC)}  {kw_indent}{ln}{' ' * max(pad, 0)}  {c(GREEN)}│{c(NC)}")
         print(f"  {c(GREEN)}╰{'─' * BOX_W}╯{c(NC)}")
         print()
 

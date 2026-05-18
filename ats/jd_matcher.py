@@ -97,6 +97,7 @@ class JDResult:
     passed: bool
     threshold: float
     edu_gap: EduGap | None = None
+    author_name: str = ""
     mode: str = "jd"
 
 
@@ -465,4 +466,5 @@ def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) ->
         passed=overall >= threshold,
         threshold=threshold,
         edu_gap=edu_gap,
+        author_name=resume.contact.full_name,
     )
