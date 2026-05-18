@@ -1,2 +1,4 @@
 PyYAML>=6.0
 watchdog>=4.0
+spacy>=3.7
+rapidfuzz>=3.0

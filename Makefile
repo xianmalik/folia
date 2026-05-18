@@ -1,7 +1,7 @@
 # Makefile for xianmalik_cv
 # Targets: build (default), watch, open, clean, deps, venv
 
-.PHONY: build watch open clean deps venv lint format test release docker-build
+.PHONY: build watch open clean deps venv lint format test release docker-build ats ats-jd ats-deps
 
 BUILD_SCRIPT := ./scripts/build.py
 PDF := dist/resume.pdf
@@ -54,4 +54,15 @@ release: deps
 docker-build:
 	@docker build -t folia .
 	@docker run --rm -v "$(PWD)/dist:/app/dist" folia
+
+ats-deps: deps
+	@$(PY) -c "import spacy; spacy.load('en_core_web_sm')" >/dev/null 2>&1 || \
+	 { $(PIP) install -r requirements.txt && $(PY) -m spacy download en_core_web_sm; }
+
+ats: deps
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py
+
+ats-jd: ats-deps
+	@[ -n "$(JD)" ] || { echo "Usage: make ats-jd JD=path/to/jd.txt"; exit 1; }
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)"
 
