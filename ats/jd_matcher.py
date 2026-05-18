@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import re
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .loader import ResumeData, Position
 from .date_parser import compute_years_experience
 from . import ontology as ont
+
+_KEYWORDS_PATH = Path(__file__).parent / "keywords.json"
+_KW = json.loads(_KEYWORDS_PATH.read_text(encoding="utf-8"))
 
 try:
     import spacy
@@ -21,24 +26,26 @@ try:
 except ImportError:
     _HAS_RAPIDFUZZ = False
 
-_GENERIC_TERMS = {
-    "team", "company", "role", "position", "experience", "skill", "skills", "ability",
-    "abilities", "candidate", "employer", "environment", "culture", "opportunity",
-    "benefit", "work", "job", "requirement", "requirements", "responsibility",
-    "responsibilities", "year", "years", "month", "months", "time", "project", "product",
-    "service", "solution", "platform", "system", "application", "app", "tool", "technology",
-    "technologies", "software", "engineering", "development", "problem", "challenge", "task",
-    "feature", "result", "impact", "knowledge", "understanding", "strong", "good", "excellent",
-    "great", "ideal", "preferred", "required", "plus", "bonus", "nice", "proficiency",
-    "familiarity", "background", "passion", "focus", "interest", "desire", "ownership",
-    "quality", "mindset", "communication", "leadership", "mentorship", "degree", "bachelor",
-    "master", "field", "relevant", "modern", "high", "large", "scale", "complex", "fast",
-    "paced", "driven", "member", "partner", "startup", "remote", "hybrid", "onsite",
-    "fulltime", "part", "contract", "compensation", "salary", "equity", "based", "using",
-    "building", "writing", "working", "etc", "ie", "eg",
-}
+_GENERIC_TERMS: set[str] = set(_KW["generic_terms"])
+_SENIORITY: set[str] = set(_KW["seniority"])
+_HR_WORD_BLOCKLIST: set[str] = set(_KW["hr_word_blocklist"])
+_ROLE_EQUIV: dict[str, str] = _KW["role_equiv"]
+_NOISE_SECTION_RE = re.compile(
+    r"^(" + "|".join(_KW["noise_section_patterns"]) + r")",
+    re.IGNORECASE,
+)
 
-_SENIORITY = {"senior", "sr", "lead", "principal", "staff", "head", "junior", "jr", "associate"}
+
+def _strip_nontechnical_sections(text: str) -> str:
+    """Remove HR/benefits/culture paragraphs from JD before keyword extraction."""
+    blocks = re.split(r"\n{2,}", text)
+    kept = []
+    for block in blocks:
+        heading = block.strip().split("\n")[0].strip()
+        if _NOISE_SECTION_RE.match(heading):
+            continue
+        kept.append(block)
+    return "\n\n".join(kept)
 
 
 @dataclass
@@ -83,14 +90,16 @@ def _load_spacy():
         sys.exit(1)
 
 
+_TITLE_WORDS: set[str] = set(_KW["title_words"])
+_TECH_PATTERN = re.compile(
+    r"\b(?:" + "|".join(_KW["tech_patterns"]) + r")\b",
+    re.IGNORECASE,
+)
+
+
 def _extract_jd_title(text: str) -> str:
     """Best-effort extraction of job title from first lines of JD."""
-    title_words = {
-        "engineer", "developer", "manager", "lead", "architect", "designer",
-        "analyst", "scientist", "intern", "head", "director", "specialist",
-        "consultant", "staff", "principal", "frontend", "backend", "fullstack",
-        "full-stack", "software", "mobile", "data", "devops", "sre", "qa",
-    }
+    title_words = _TITLE_WORDS
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
 
     # First pass: short heading-style lines with a known title word (wider window)
@@ -132,6 +141,10 @@ def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
         n = ont.normalize(text)
         if n in seen_norms or len(n) <= 2 or n in _GENERIC_TERMS:
             return
+        # For multi-word phrases, reject if any word is an HR/benefits term
+        words_lower = [w.lower().rstrip("s") for w in n.split()]
+        if len(words_lower) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_lower):
+            return
         seen_norms.add(n)
         keywords.append(text)
 
@@ -164,13 +177,7 @@ def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
                 _add(token.text)
 
     # Also scan for explicit tech mentioned inline with special chars (e.g. "Node.js", "C++")
-    tech_pattern = re.compile(
-        r"\b(?:Node\.js|Next\.js|Vue\.js|React\.js|Express\.js|TypeScript|JavaScript"
-        r"|PostgreSQL|MongoDB|GraphQL|WebSocket|WebSockets|FastAPI|CI/CD|REST\s?API"
-        r"|GitHub\s?Actions|TailwindCSS|Tailwind\s?CSS)\b",
-        re.IGNORECASE,
-    )
-    for m in tech_pattern.finditer(doc.text):
+    for m in _TECH_PATTERN.finditer(doc.text):
         _add(m.group(0))
 
     return keywords
@@ -224,17 +231,6 @@ def _score_keyword(
                 return 0.4, ["skills"], "fuzzy"
 
     return 0.0, [], "none"
-
-
-# Terms treated as equivalent when comparing JD title to resume titles
-_ROLE_EQUIV: dict[str, str] = {
-    "developer": "engineer",
-    "developers": "engineer",
-    "programmer": "engineer",
-    "programmers": "engineer",
-    "coder": "engineer",
-    "dev": "engineer",
-}
 
 
 def _normalize_title_tokens(tokens: set[str]) -> set[str]:
@@ -338,8 +334,9 @@ def run(resume: ResumeData, jd_text: str, threshold: float = 70.0) -> JDResult:
     nlp = _load_spacy()
     ontology = ont.load_ontology()
 
-    doc = nlp(jd_text)
     jd_title = _extract_jd_title(jd_text)
+    cleaned_jd = _strip_nontechnical_sections(jd_text)
+    doc = nlp(cleaned_jd)
     jd_keywords = _extract_jd_keywords(doc, ontology)
 
     section_texts = _build_section_texts(resume)

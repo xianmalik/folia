@@ -1,28 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .loader import ResumeData
 from .date_parser import parse_date_range
 
-_ACTION_VERBS = {
-    "developed", "built", "engineered", "designed", "architected", "implemented",
-    "led", "created", "managed", "delivered", "deployed", "optimized", "enhanced",
-    "established", "conducted", "contributed", "achieved", "resolved", "improved",
-    "reduced", "increased", "automated", "migrated", "integrated", "launched",
-    "maintained", "performed", "produced", "planned", "prepared", "coordinated",
-    "collaborated", "supported", "streamlined", "accelerated", "scaled", "refactored",
-    "tested", "documented", "containerized", "configured", "ensured", "spearheaded",
-    "mentored", "reviewed", "authored", "shipped", "redesigned", "restructured",
-    "published", "overhauled", "owned", "drove", "leveraged", "introduced",
-}
-
-_IMPACT_PHRASES = [
-    "track record", "scalable", "cross-functional", "production-grade", "end-to-end",
-    "type-safe", "real-time", "full-stack", "proficient", "expertise", "in-depth",
-    "5+ years", "cross-browser", "industry-grade", "high performance", "mission-critical",
-]
+_KW = json.loads((Path(__file__).parent / "keywords.json").read_text(encoding="utf-8"))
+_ACTION_VERBS: set[str] = set(_KW["action_verbs"])
+_IMPACT_PHRASES: list[str] = _KW["impact_phrases"]
 
 
 @dataclass

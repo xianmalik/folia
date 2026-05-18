@@ -331,6 +331,9 @@ TSWLatexianTemp*
 # Misc:
 .claude
 .venv
+__pycache__/
+*.pyc
+*.pyo
 
 # Build output
 dist/
