@@ -57,6 +57,17 @@ class KeywordMatch:
 
 
 @dataclass
+class EduGap:
+    resume_level: str       # e.g. "BSc"
+    resume_field: str       # e.g. "Computer Science"
+    jd_required: str        # e.g. "Master"
+    jd_required_level: float
+    resume_level_score: float
+    cs_bonus: float
+    matched: bool           # True if resume meets or exceeds JD requirement
+
+
+@dataclass
 class JDResult:
     overall_score: float
     keyword_score: float
@@ -70,6 +81,7 @@ class JDResult:
     years_detected: float
     passed: bool
     threshold: float
+    edu_gap: EduGap | None = None
     mode: str = "jd"
 
 
@@ -297,37 +309,56 @@ def _experience_score(resume: ResumeData, jd_text: str) -> tuple[float, float]:
     return score, years
 
 
-def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> float:
+def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[float, EduGap | None]:
     edu_levels: dict[str, float] = ontology.get("education_levels", {})
     if not resume.schools:
-        return 30.0
+        return 30.0, None
 
     highest = 0.0
+    highest_kw = ""
     all_edu_text = " ".join(f"{s.degree} {s.institution}".lower() for s in resume.schools)
     for keyword, level in edu_levels.items():
         if keyword in all_edu_text and float(level) > highest:
             highest = float(level)
+            highest_kw = keyword
     if highest == 0.0:
-        highest = 60.0  # assume bachelor if not detected
+        highest = 60.0
+        highest_kw = "bachelor"  # assumed
 
     cs_terms = {"computer science", "software engineering", "information technology", "computing"}
-    cs_bonus = 10.0 if any(t in all_edu_text for t in cs_terms) else 0.0
+    cs_match = next((t for t in cs_terms if t in all_edu_text), None)
+    cs_bonus = 10.0 if cs_match else 0.0
 
     jd_lower = jd_text.lower()
     jd_req = 0.0
+    jd_req_kw = ""
     for keyword, level in edu_levels.items():
         if keyword in jd_lower and float(level) > jd_req:
             jd_req = float(level)
+            jd_req_kw = keyword
+
+    resume_field = cs_match or ""
+    resume_degree = resume.schools[0].degree if resume.schools else ""
 
     if jd_req > 0:
         if highest >= jd_req:
-            return min(100.0, 100.0 + cs_bonus)
+            score = min(100.0, 100.0 + cs_bonus)
+            gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
+                         jd_required=jd_req_kw, jd_required_level=jd_req,
+                         resume_level_score=highest, cs_bonus=cs_bonus, matched=True)
         elif highest >= jd_req - 30:
-            return min(100.0, 65.0 + cs_bonus)
+            score = min(100.0, 65.0 + cs_bonus)
+            gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
+                         jd_required=jd_req_kw, jd_required_level=jd_req,
+                         resume_level_score=highest, cs_bonus=cs_bonus, matched=False)
         else:
-            return min(100.0, 30.0 + cs_bonus)
+            score = min(100.0, 30.0 + cs_bonus)
+            gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
+                         jd_required=jd_req_kw, jd_required_level=jd_req,
+                         resume_level_score=highest, cs_bonus=cs_bonus, matched=False)
+        return score, gap
 
-    return min(100.0, highest + cs_bonus)
+    return min(100.0, highest + cs_bonus), None
 
 
 def run(resume: ResumeData, jd_text: str, threshold: float = 70.0) -> JDResult:
@@ -362,7 +393,7 @@ def run(resume: ResumeData, jd_text: str, threshold: float = 70.0) -> JDResult:
     keyword_score = (total_weighted / len(jd_keywords)) * 100.0 if jd_keywords else 0.0
     title_score = _title_score(jd_title, resume.positions)
     exp_score, years_detected = _experience_score(resume, jd_text)
-    edu_score = _education_score(resume, jd_text, ontology)
+    edu_score, edu_gap = _education_score(resume, jd_text, ontology)
 
     overall = (
         keyword_score * 0.40
@@ -384,4 +415,5 @@ def run(resume: ResumeData, jd_text: str, threshold: float = 70.0) -> JDResult:
         years_detected=years_detected,
         passed=overall >= threshold,
         threshold=threshold,
+        edu_gap=edu_gap,
     )
