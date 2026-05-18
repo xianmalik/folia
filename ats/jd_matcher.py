@@ -11,7 +11,7 @@ from .loader import ResumeData, Position
 from .date_parser import compute_years_experience
 from . import ontology as ont
 
-_KEYWORDS_PATH = Path(__file__).parent / "keywords.json"
+_KEYWORDS_PATH = Path(__file__).parent / "data" / "keywords.json"
 _KW = json.loads(_KEYWORDS_PATH.read_text(encoding="utf-8"))
 
 try:

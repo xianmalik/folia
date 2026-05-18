@@ -8,7 +8,7 @@ from pathlib import Path
 from .loader import ResumeData
 from .date_parser import parse_date_range
 
-_KW = json.loads((Path(__file__).parent / "keywords.json").read_text(encoding="utf-8"))
+_KW = json.loads((Path(__file__).parent / "data" / "keywords.json").read_text(encoding="utf-8"))
 _ACTION_VERBS: set[str] = set(_KW["action_verbs"])
 _IMPACT_PHRASES: list[str] = _KW["impact_phrases"]
 

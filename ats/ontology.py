@@ -6,7 +6,7 @@ import re
 from collections import deque
 from pathlib import Path
 
-_ONTOLOGY_PATH = Path(__file__).parent / "ontology.json"
+_ONTOLOGY_PATH = Path(__file__).parent / "data" / "ontology.json"
 _CACHED: dict | None = None
 
 
