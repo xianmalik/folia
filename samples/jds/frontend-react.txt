@@ -1,0 +1,43 @@
+Senior Frontend Engineer — React
+
+About Us
+
+We build B2B SaaS dashboards used by operations teams at Fortune 500 companies. We are seeking a Senior Frontend Engineer who is exceptional with React, cares deeply about UI quality, and can drive a design system from scratch.
+
+Requirements
+
+- 5+ years of professional frontend engineering experience
+- Expert-level React and TypeScript — you live and breathe component composition and hooks
+- Next.js for server-side rendering, static generation, and API routes
+- State management experience: Zustand, Redux Toolkit, or React Query
+- TailwindCSS and experience building design systems or component libraries
+- Accessibility (WCAG 2.1 AA) best practices
+- Unit and integration testing with Jest and React Testing Library
+- Experience with Storybook for component documentation
+- Strong understanding of Core Web Vitals, Lighthouse, and performance optimization
+- Familiarity with CI/CD pipelines and code review practices
+
+Nice to Have
+
+- Familiarity with Playwright or Cypress for end-to-end testing
+- Experience with Shadcn/ui, Radix UI, or Headless UI primitives
+- GraphQL with Apollo Client or URQL
+- Experience with real-time data (WebSockets, SSE) in dashboards
+- Exposure to backend APIs: Node.js or Python FastAPI
+
+Responsibilities
+
+- Build and maintain a shared React component library used across 4 product surfaces
+- Collaborate with designers to translate Figma specs into pixel-perfect, accessible components
+- Own the performance budget and drive Core Web Vitals improvements across the product
+- Write comprehensive unit tests and contribute to end-to-end test coverage
+- Define and enforce frontend code standards through code review
+
+Benefits
+
+- $130,000–$160,000 base salary
+- Full remote, US time zones preferred
+- Stock options
+- Home office stipend: $1,500 setup, $100/month recurring
+- 20 days PTO, 10 company holidays
+- Health, dental, vision

@@ -2,3 +2,10 @@ PyYAML>=6.0
 watchdog>=4.0
 spacy>=3.7
 rapidfuzz>=3.0
+pytest>=8.0
+pdfminer.six>=20231228
+
+# Optional: semantic matching via sentence-transformers (M3 Phase 2)
+# Install with: pip install sentence-transformers
+# Downloads ~80MB model on first run to ~/.cache/folia/embeddings/
+# sentence-transformers>=2.7

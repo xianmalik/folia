@@ -1,18 +1,33 @@
-% Font package and main font setup
-\RequirePackage{fontspec}
-\defaultfontfeatures{Ligatures=TeX}
+% Font setup — pdflatex compatible
+%
+% Replaces the original fontspec + Inter Variable TTF setup.
+% Latin Modern Sans (lmodern) is always present in TeX Live and produces
+% ATS-safe PDF text (all glyphs map to Unicode codepoints).
+%
+% To restore a closer visual match to Inter:
+%   \RequirePackage[default]{sourcesanspro}  (requires texlive-fonts-extra)
 
-\setmainfont[
-  Path = font/,
-  UprightFont = Inter-Variable.ttf,
-  BoldFont = Inter-Variable.ttf,
-  BoldFeatures = {RawFeature = {+wght=700}},
-  RawFeature = {+wght=400}
-]{Inter}
+\RequirePackage[utf8]{inputenc}   % UTF-8 source encoding
+\RequirePackage[T1]{fontenc}      % T1 output encoding — proper hyphenation + accents
+\RequirePackage{lmodern}          % Latin Modern — scalable Type 1, always in TeX Live
+\renewcommand{\familydefault}{\sfdefault}  % use Latin Modern Sans as default family
 
-% Font commands
-\newcommand*{\headerfont}{\fontspec{Inter}[RawFeature = {+wght=700}]}
-\newcommand*{\headerfontlight}{\fontspec{Inter}[RawFeature = {+wght=300}]}
-\newcommand*{\footerfont}{\fontspec{Inter}[RawFeature = {+wght=400}]}
-\newcommand*{\bodyfont}{\fontspec{Inter}[RawFeature = {+wght=400}]}
-\newcommand*{\bodyfontlight}{\fontspec{Inter}[RawFeature = {+wght=300}]}
+% Critical for ATS: map PDF glyph IDs to Unicode codepoints so pdftotext,
+% pdfminer, and ATS parsers extract clean, searchable text.
+\input{glyphtounicode}
+\pdfgentounicode=1
+
+% Improve character spacing and font rendering quality under pdflatex
+\RequirePackage{microtype}
+
+% Font commands — mirror the original fontspec-based API used by styles.tex
+%   headerfont      → bold weight   (was fontspec wght=700)
+%   headerfontlight → regular       (was fontspec wght=300; LM Sans has no true light)
+%   footerfont      → regular       (was fontspec wght=400)
+%   bodyfont        → regular       (was fontspec wght=400)
+%   bodyfontlight   → regular       (was fontspec wght=300)
+\newcommand*{\headerfont}{\bfseries}
+\newcommand*{\headerfontlight}{\normalfont}
+\newcommand*{\footerfont}{\normalfont}
+\newcommand*{\bodyfont}{\normalfont}
+\newcommand*{\bodyfontlight}{\normalfont}

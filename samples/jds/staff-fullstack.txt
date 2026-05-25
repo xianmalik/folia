@@ -1,0 +1,44 @@
+Staff Full-Stack Engineer
+
+About the Role
+
+We are looking for a Staff Full-Stack Engineer to join our platform team. You will own cross-cutting features that span our React frontend, Node.js API layer, and PostgreSQL data stores, while setting the technical direction for a team of five engineers.
+
+Requirements
+
+- 7+ years of professional software engineering experience
+- Expert-level TypeScript across frontend and backend codebases
+- Deep experience with React and Next.js for building production web applications
+- Strong Node.js and Express.js backend development skills
+- PostgreSQL schema design, query optimization, and migration management
+- Experience designing and documenting RESTful APIs and GraphQL schemas
+- Proficiency with Docker and AWS (ECS, S3, RDS, Lambda, CloudFront)
+- CI/CD pipeline ownership using GitHub Actions or equivalent
+- Experience with Redis for caching and session management
+- Strong understanding of WebSockets and real-time system design
+- Track record of mentoring engineers and writing technical RFCs
+
+Nice to Have
+
+- Experience with Kubernetes or ECS task orchestration at scale
+- Familiarity with Terraform or AWS CDK for infrastructure-as-code
+- Experience with Prisma ORM or similar type-safe database tooling
+- Frontend design system experience (Storybook, component libraries)
+- Background in performance profiling and Core Web Vitals optimization
+
+Responsibilities
+
+- Design and deliver full-stack features with end-to-end ownership from API design to deployment
+- Establish TypeScript standards, code review guidelines, and architectural patterns for the team
+- Partner with product and design to scope and estimate complex initiatives
+- Drive performance improvements across the frontend and API layer
+- Participate in on-call rotation and own reliability of critical services
+
+What We Offer
+
+- Competitive salary and equity
+- Fully remote with flexible working hours
+- $2,000 annual learning stipend
+- Health, dental, and vision insurance
+- 401(k) with 4% company match
+- Unlimited PTO

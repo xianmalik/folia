@@ -36,11 +36,11 @@ def read_version() -> str:
 
 def print_banner(version: str) -> None:
     print(f"{CYAN}╭─────────────────────────────────────────────────────────────────────╮{NC}")
-    print(f"{CYAN}│{WHITE} XeLaTeX CV Builder                                                  {CYAN}│{NC}")
+    print(f"{CYAN}│{WHITE} pdfLaTeX CV Builder                                                 {CYAN}│{NC}")
     print(f"{CYAN}│                                                                     │{NC}")
     print(f"{CYAN}│{YELLOW} Version: {GREEN}v{version}{WHITE}                                                     {CYAN}│{NC}")
     print(f"{CYAN}│{YELLOW} Compiling: {GREEN}resume.tex{WHITE} → {GREEN}dist/resume-v{version}.pdf{WHITE}                      {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Engine: {BLUE}XeLaTeX{WHITE}                                                     {CYAN}│{NC}")
+    print(f"{CYAN}│{YELLOW} Engine: {BLUE}pdfLaTeX{WHITE} (ATS-safe text extraction)                      {CYAN}│{NC}")
     print(f"{CYAN}│{YELLOW} Postbuild: {GRAY}Auto cleanup of auxiliary files after successful build   {CYAN}│{NC}")
     print(f"{CYAN}│                                                                     │{NC}")
     print(f"{CYAN}│{YELLOW} Usage: {GREEN}./scripts/build.py{WHITE}                                           {CYAN}│{NC}")
@@ -161,7 +161,7 @@ def main() -> int:
         with open(log_path_local, "w") as log_file_local:
             proc = subprocess.Popen(
                 [
-                    "xelatex",
+                    "pdflatex",
                     "-interaction=nonstopmode",
                     "-output-directory=dist",
                     "resume.tex",

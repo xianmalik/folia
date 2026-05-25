@@ -213,28 +213,28 @@ Cloud-LLM features. Silent no-op when no API key is set.
 
 ## Quick execution checklist
 
-- [ ] 0.1 — JD samples
-- [ ] 0.2 — pytest harness
-- [ ] 0.3 — baseline capture
-- [ ] 1.1 — font audit
-- [ ] 1.2 — fontspec replacement
-- [ ] 1.3 — pdflatex switch
-- [ ] 1.4 — PDF extraction validator
-- [ ] 2.1 — must-have / preferred tiers
-- [ ] 2.2 — frequency weighting
-- [ ] 2.3 — section-aware scoring
-- [ ] 2.4 — ESCO ontology expansion
-- [ ] 2.5 — integrity check
-- [ ] 2.6 — renderer must-have gaps
-- [ ] 2.7 — Phase 1 re-baseline
-- [ ] 3.1 — embeddings deps
-- [ ] 3.2 — `ats/embeddings.py`
-- [ ] 3.3 — semantic score band
-- [ ] 3.4 — coverage matrix
-- [ ] 3.5 — Phase 2 re-baseline
-- [ ] 4.1 — `ats/llm.py`
-- [ ] 4.2 — LLM JD parser wiring
-- [ ] 4.3 — bullet grading
-- [ ] 4.4 — gap analysis
-- [ ] 4.5 — CLI plumbing
-- [ ] 4.6 — final validation
+- [x] 0.1 — JD samples (`samples/jds/*.txt`)
+- [x] 0.2 — pytest harness (`tests/`, 19 tests green)
+- [x] 0.3 — baseline capture (`samples/jds/_baseline.md`)
+- [x] 1.1 — font audit (fontspec → lmodern)
+- [x] 1.2 — fontspec replacement (`core/fonts.tex`)
+- [x] 1.3 — pdflatex switch (`scripts/build.py`, GitHub Actions)
+- [x] 1.4 — PDF extraction validator (`ats/pdf_validator.py`, `--validate-pdf`)
+- [x] 2.1 — must-have / preferred tiers (`_tier_jd_sections`, tier multipliers in config)
+- [x] 2.2 — frequency weighting (`log1p(freq)` in scoring loop)
+- [x] 2.3 — section-aware scoring (`_SECTION_WEIGHTS`, skills>exp>summary>edu)
+- [x] 2.4 — Ontology v2.0 expansion (~30 new entries, ~60 new aliases)
+- [x] 2.5 — integrity check (`ats/integrity.py` — density, hidden-text, repetition)
+- [x] 2.6 — renderer must-have gaps (prominent red block, tier badges)
+- [x] 2.7 — Phase 1 re-baseline (**median 62.4 → 76.6**, 0/5 → 4/5 passing)
+- [x] 3.1 — embeddings deps (optional, CPU-only torch required in WSL)
+- [x] 3.2 — `ats/embeddings.py` (bulk_semantic_scores, graceful no-op without ST)
+- [x] 3.3 — semantic score band (`use_semantic` flag, `--semantic` CLI, `--no-semantic`)
+- [ ] 3.4 — coverage matrix (bullet-vs-requirement display in renderer)
+- [ ] 3.5 — Phase 2 re-baseline (requires sentence-transformers installed)
+- [x] 4.1 — `ats/llm.py` (parse_jd, grade_bullets, gap_analysis, anthropic+openai)
+- [x] 4.2 — LLM JD parser wiring (`run(..., use_semantic=...)`, llm flag)
+- [x] 4.3 — bullet grading (`grade_bullets()` in `ats/llm.py`)
+- [x] 4.4 — gap analysis (`gap_analysis()` in `ats/llm.py`)
+- [x] 4.5 — CLI plumbing (`--llm`, `--semantic`, `--no-semantic`, `make ats-llm`, `make ats-semantic`)
+- [ ] 4.6 — final validation (run with LLM enabled once API key set)

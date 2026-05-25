@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -10,6 +11,7 @@ from .loader import ResumeData, Position
 from .date_parser import compute_years_experience
 from . import ontology as ont
 from . import config as _cfg
+from . import embeddings as _emb
 
 _KEYWORDS_PATH = Path(__file__).parent / "data" / "keywords.json"
 _KW = json.loads(_KEYWORDS_PATH.read_text(encoding="utf-8"))
@@ -41,12 +43,33 @@ _KW_SCORE_FUZZY    = _JC["keyword_scores"]["fuzzy"]
 _FUZZY_MIN_RATIO   = _JC["fuzzy_min_ratio"]
 _PASS_THRESHOLD    = _JC["pass_threshold"]
 
+# v2: tier multipliers and must-miss penalty
+_TIER_MULT: dict[str, float] = _JC.get("tier_multipliers", {"must": 2.0, "preferred": 1.0, "neutral": 0.75})
+_MUST_MISS_PENALTY: float = _JC.get("must_miss_penalty", 5.0)
+_MUST_MISS_CAP: float     = _JC.get("must_miss_penalty_cap", 30.0)
+
+# v2: section weights (where in the resume a keyword appears matters)
+_SECTION_WEIGHTS: dict[str, float] = _JC.get(
+    "section_weights",
+    {"skills": 1.00, "experience": 0.85, "projects": 0.85, "summary": 0.70, "education": 0.50},
+)
+
 _GENERIC_TERMS: set[str] = set(_KW["generic_terms"])
 _SENIORITY: set[str] = set(_KW["seniority"])
 _HR_WORD_BLOCKLIST: set[str] = set(_KW["hr_word_blocklist"])
 _ROLE_EQUIV: dict[str, str] = _KW["role_equiv"]
 _NOISE_SECTION_RE = re.compile(
     r"^(" + "|".join(_KW["noise_section_patterns"]) + r")",
+    re.IGNORECASE,
+)
+
+# v2: patterns for tier classification
+_MUST_PATTERNS = re.compile(
+    r"(?:" + "|".join(_KW.get("must_have_section_patterns", ["requirements", "required", "must.?have"])) + r")",
+    re.IGNORECASE,
+)
+_PREFERRED_PATTERNS = re.compile(
+    r"(?:" + "|".join(_KW.get("preferred_section_patterns", ["preferred", "nice.?to.?have", "bonus"])) + r")",
     re.IGNORECASE,
 )
 
@@ -63,12 +86,42 @@ def _strip_nontechnical_sections(text: str) -> str:
     return "\n\n".join(kept)
 
 
+def _tier_jd_sections(text: str) -> dict[str, str]:
+    """
+    Split JD into blocks and assign each block a tier: must | preferred | neutral.
+
+    Returns a dict mapping normalized keyword (from each block's content) to tier.
+    We run the full keyword extraction separately; this function returns the
+    block-level tier so the caller can tag extracted keywords.
+    """
+    blocks = re.split(r"\n{2,}", text)
+    # Map: block_index -> tier
+    block_tiers: list[tuple[str, str]] = []  # (block_text, tier)
+    current_tier = "neutral"
+
+    for block in blocks:
+        heading = block.strip().split("\n")[0].strip()
+        if _MUST_PATTERNS.search(heading):
+            current_tier = "must"
+        elif _PREFERRED_PATTERNS.search(heading):
+            current_tier = "preferred"
+        # Tip: a new heading that matches neither resets to neutral
+        elif re.match(r"^[A-Z][^\n]{0,60}$", heading) and not heading.endswith("."):
+            # Looks like a heading (short, starts uppercase, no period)
+            current_tier = "neutral"
+        block_tiers.append((block, current_tier))
+
+    return block_tiers  # type: ignore[return-value]
+
+
 @dataclass
 class KeywordMatch:
     keyword: str
     found_in: list[str]
     matched_via: str  # "direct" | "ontology" | "fuzzy"
     score: float
+    tier: str = "neutral"   # v2: "must" | "preferred" | "neutral"
+    jd_freq: int = 1        # v2: how many times keyword appeared in JD
 
 
 @dataclass
@@ -99,6 +152,7 @@ class JDResult:
     edu_gap: EduGap | None = None
     author_name: str = ""
     mode: str = "jd"
+    missing_must_keywords: list[str] = field(default_factory=list)  # v2
 
 
 def _load_spacy():
@@ -162,12 +216,18 @@ def _collect_noun_chunks(doc, known_tech: dict, add) -> None:
 
 def _collect_tokens(doc, known_tech: dict, add) -> None:
     for token in doc:
-        if token.pos_ in ("PROPN", "NOUN") and len(token.text) > 2:
-            n = ont.normalize(token.text)
-            if n in _GENERIC_TERMS or not token.is_alpha:
-                continue
+        if len(token.text) <= 2 or not token.is_alpha:
+            continue
+        n = ont.normalize(token.text)
+        if n in _GENERIC_TERMS:
+            continue
+        if token.pos_ == "PROPN":
+            # Proper nouns (React, AWS, TypeScript…) — include if cap or known
             if token.text[0].isupper() or n in known_tech:
                 add(token.text)
+        elif token.pos_ == "NOUN" and n in known_tech:
+            # Generic nouns only if they are an explicit ontology tech term
+            add(token.text)
 
 
 def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
@@ -205,6 +265,41 @@ def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
     return keywords
 
 
+def _build_keyword_tiers_and_freqs(
+    jd_text: str,
+) -> tuple[dict[str, str], dict[str, int]]:
+    """
+    Return (keyword_tiers, keyword_freqs) by analysing the raw JD text.
+
+    keyword_tiers maps normalized keyword -> "must" | "preferred" | "neutral"
+    keyword_freqs maps normalized keyword -> count of occurrences in JD
+    """
+    block_tiers = _tier_jd_sections(jd_text)
+
+    # Build a keyword -> tier map.  Words appearing in must-tier blocks win.
+    kw_tier: dict[str, str] = {}
+    tier_priority = {"must": 3, "preferred": 2, "neutral": 1}
+
+    for block_text, tier in block_tiers:
+        # Simple word tokenization for tier assignment (no spaCy needed here)
+        for m in re.finditer(r"[A-Za-z][A-Za-z0-9\.\+\#\-/]*", block_text):
+            norm = ont.normalize(m.group(0))
+            if len(norm) <= 2 or norm in _GENERIC_TERMS:
+                continue
+            current = kw_tier.get(norm)
+            if current is None or tier_priority[tier] > tier_priority[current]:
+                kw_tier[norm] = tier
+
+    # Count raw occurrences in the full text
+    kw_freq: dict[str, int] = {}
+    for m in re.finditer(r"[A-Za-z][A-Za-z0-9\.\+\#\-/]*", jd_text):
+        norm = ont.normalize(m.group(0))
+        if len(norm) > 2 and norm not in _GENERIC_TERMS:
+            kw_freq[norm] = kw_freq.get(norm, 0) + 1
+
+    return kw_tier, kw_freq
+
+
 def _build_section_texts(resume: ResumeData) -> dict[str, str]:
     return {
         "summary": resume.summary,
@@ -231,7 +326,17 @@ def _score_keyword(
     section_texts: dict[str, str],
     expanded_norms: set[str],
     skill_items: list[str],
+    *,
+    use_semantic: bool = False,
 ) -> tuple[float, list[str], str]:
+    """
+    Score a single keyword match against the resume.
+
+    Returns (raw_score, found_in_sections, match_via).
+    raw_score is in [0, 1] and already incorporates the best section weight.
+
+    match_via: "direct" | "ontology" | "fuzzy" | "semantic" | "none"
+    """
     kw_norm = ont.normalize(kw)
     found_in: list[str] = []
 
@@ -240,17 +345,27 @@ def _score_keyword(
         if re.search(rf"\b{re.escape(kw_norm)}\b", ont.normalize(text)):
             found_in.append(section)
     if found_in:
-        return _KW_SCORE_DIRECT, found_in, "direct"
+        # v2: apply the best section weight
+        best_w = max(_SECTION_WEIGHTS.get(s, 1.0) for s in found_in)
+        return _KW_SCORE_DIRECT * best_w, found_in, "direct"
 
     # Ontology expansion match
     if kw_norm in expanded_norms:
-        return _KW_SCORE_ONTOLOGY, ["skills"], "ontology"
+        # Ontology hits are implicitly in the skills section
+        return _KW_SCORE_ONTOLOGY * _SECTION_WEIGHTS.get("skills", 1.0), ["skills"], "ontology"
 
     # Fuzzy match against individual skill items (rapidfuzz)
     if _HAS_RAPIDFUZZ:
         for item in skill_items:
             if _fuzz.ratio(kw_norm, ont.normalize(item)) >= _FUZZY_MIN_RATIO:
-                return _KW_SCORE_FUZZY, ["skills"], "fuzzy"
+                return _KW_SCORE_FUZZY * _SECTION_WEIGHTS.get("skills", 1.0), ["skills"], "fuzzy"
+
+    # v2 Phase 2: semantic similarity (only if requested and library available)
+    if use_semantic and _emb.is_available():
+        sem_score, sem_sections = _emb.semantic_score(kw, section_texts)
+        if sem_score > 0 and sem_sections:
+            best_w = max(_SECTION_WEIGHTS.get(s, 1.0) for s in sem_sections)
+            return sem_score * best_w, sem_sections, "semantic"
 
     return 0.0, [], "none"
 
@@ -264,7 +379,11 @@ def _title_score(jd_title: str, positions: list[Position]) -> float:
     if not jd_title or not positions:
         return 50.0
 
-    jd_tokens = _normalize_title_tokens(set(ont.normalize(jd_title).split()) - _SENIORITY)
+    # Strip tech-stack specialisation suffix after — / – / | so
+    # "Senior Frontend Engineer — React" → "Senior Frontend Engineer"
+    jd_title_clean = re.split(r"\s*[—–|]\s*", jd_title)[0].strip()
+
+    jd_tokens = _normalize_title_tokens(set(ont.normalize(jd_title_clean).split()) - _SENIORITY)
     if not jd_tokens:
         return 50.0
 
@@ -280,7 +399,7 @@ def _title_score(jd_title: str, positions: list[Position]) -> float:
             best = sim
 
     # Seniority match bonus
-    jd_full_tokens = set(ont.normalize(jd_title).split())
+    jd_full_tokens = set(ont.normalize(jd_title_clean).split())
     resume_titles_concat = " ".join(ont.normalize(p.title) for p in positions)
     resume_tokens = set(resume_titles_concat.split())
     bonus = 10.0 if (jd_full_tokens & _SENIORITY) and (resume_tokens & _SENIORITY) else 0.0
@@ -409,9 +528,20 @@ def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[
     return min(100.0, highest + cs_bonus), None
 
 
-def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) -> JDResult:
+def run(
+    resume: ResumeData,
+    jd_text: str,
+    threshold: float = _PASS_THRESHOLD,
+    *,
+    use_semantic: bool | None = None,
+) -> JDResult:
     if not jd_text or not jd_text.strip():
         raise ValueError("jd_text must not be empty")
+
+    # Resolve use_semantic: if None, default to True when library is available
+    if use_semantic is None:
+        use_semantic = _emb.is_available()
+
     nlp = _load_spacy()
     ontology = ont.load_ontology()
 
@@ -419,6 +549,9 @@ def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) ->
     cleaned_jd = _strip_nontechnical_sections(jd_text)
     doc = nlp(cleaned_jd)
     jd_keywords = _extract_jd_keywords(doc, ontology)
+
+    # v2: tier + frequency maps built from raw JD text (before noise stripping)
+    keyword_tiers, keyword_freqs = _build_keyword_tiers_and_freqs(jd_text)
 
     section_texts = _build_section_texts(resume)
     skill_items = [item for sc in resume.skills for item in sc.items]
@@ -430,17 +563,52 @@ def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) ->
 
     matched: list[KeywordMatch] = []
     missing: list[str] = []
+    missing_must: list[str] = []
+
     total_weighted = 0.0
+    total_possible = 0.0
 
     for kw in jd_keywords:
-        score, found_in, via = _score_keyword(kw, section_texts, expanded_norms, skill_items)
+        kw_norm = ont.normalize(kw)
+        tier = keyword_tiers.get(kw_norm, "neutral")
+        freq = keyword_freqs.get(kw_norm, 1)
+
+        # Weight = tier_multiplier × log1p(frequency)
+        tier_mult = _TIER_MULT.get(tier, 1.0)
+        freq_weight = math.log1p(freq)
+        weight = tier_mult * freq_weight
+
+        score, found_in, via = _score_keyword(
+            kw, section_texts, expanded_norms, skill_items,
+            use_semantic=use_semantic,
+        )
+
+        total_possible += weight
+        total_weighted += score * weight
+
         if score > 0:
-            matched.append(KeywordMatch(keyword=kw, found_in=found_in, matched_via=via, score=score))
-            total_weighted += score
+            matched.append(
+                KeywordMatch(
+                    keyword=kw,
+                    found_in=found_in,
+                    matched_via=via,
+                    score=score,
+                    tier=tier,
+                    jd_freq=freq,
+                )
+            )
         else:
             missing.append(kw)
+            if tier == "must":
+                missing_must.append(kw)
 
-    keyword_score = (total_weighted / len(jd_keywords)) * 100.0 if jd_keywords else 0.0
+    # v2: weighted keyword score
+    keyword_score = (total_weighted / total_possible * 100.0) if total_possible else 0.0
+
+    # v2: flat penalty per missed must-have keyword, capped
+    must_penalty = min(len(missing_must) * _MUST_MISS_PENALTY, _MUST_MISS_CAP)
+    keyword_score = max(0.0, keyword_score - must_penalty)
+
     title_score = _title_score(jd_title, resume.positions)
     exp_score, years_detected = _experience_score(resume, jd_text)
     edu_score, edu_gap = _education_score(resume, jd_text, ontology)
@@ -467,4 +635,5 @@ def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) ->
         threshold=threshold,
         edu_gap=edu_gap,
         author_name=resume.contact.full_name,
+        missing_must_keywords=missing_must,
     )

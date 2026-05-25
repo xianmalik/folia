@@ -1,0 +1,42 @@
+DevOps / Cloud Engineer
+
+About the Role
+
+We are looking for a DevOps Engineer who can own our cloud infrastructure, improve deployment reliability, and help our engineering teams ship faster with better tooling.
+
+Requirements
+
+- 4+ years of DevOps or cloud infrastructure engineering experience
+- Strong AWS experience: EC2, ECS, S3, RDS, Lambda, IAM, CloudFront, VPC, and Route 53
+- Docker for containerization and multi-stage builds
+- Kubernetes orchestration (EKS or self-managed) — cluster setup, Helm charts, workload tuning
+- Infrastructure as code with Terraform or AWS CDK
+- CI/CD pipeline design and ownership using GitHub Actions
+- Linux systems administration and shell scripting (Bash)
+- Monitoring, alerting, and observability: CloudWatch, Datadog, or Grafana
+- Experience with secrets management (AWS Secrets Manager or HashiCorp Vault)
+- Strong understanding of networking: VPCs, subnets, security groups, load balancers
+
+Nice to Have
+
+- Experience with service mesh (Istio or AWS App Mesh)
+- Knowledge of cost optimization strategies for AWS workloads
+- Familiarity with FinOps tooling
+- GitHub Enterprise administration experience
+- Experience supporting Python and Node.js application deployments
+
+Responsibilities
+
+- Own and evolve the cloud architecture across development, staging, and production environments
+- Design and maintain CI/CD pipelines that enable engineers to ship safely and frequently
+- Implement monitoring and alerting that drives down MTTR
+- Conduct security hardening reviews and ensure compliance with SOC 2 requirements
+- Document infrastructure decisions and run incident post-mortems
+
+Compensation
+
+- $140,000–$175,000 base
+- Remote, US or Canada
+- Equity
+- Medical, dental, vision
+- Unlimited PTO

@@ -1,7 +1,7 @@
 # Makefile for xianmalik_cv
 # Targets: build (default), watch, open, clean, deps, venv
 
-.PHONY: build watch open clean deps venv lint format test release docker-build ats ats-jd ats-deps
+.PHONY: build watch open clean deps venv lint format test test-ats release docker-build ats ats-jd ats-deps ats-pdf-check ats-semantic ats-semantic-deps ats-llm
 
 BUILD_SCRIPT := ./scripts/build.py
 PDF := dist/resume.pdf
@@ -55,6 +55,12 @@ docker-build:
 	@docker build -t folia .
 	@docker run --rm -v "$(PWD)/dist:/app/dist" folia
 
+test-ats: ats-deps
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) -m pytest tests/ -v
+
+ats-pdf-check: deps
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --validate-pdf
+
 ats-deps: deps
 	@$(PY) -c "import spacy; spacy.load('en_core_web_sm')" >/dev/null 2>&1 || \
 	 { printf "Installing prerequisites... "; \
@@ -68,4 +74,20 @@ ats: deps
 ats-jd: ats-deps
 	@[ -n "$(JD)" ] || { echo "Usage: make ats-jd JD=path/to/jd.txt"; exit 1; }
 	-@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)"
+
+ats-semantic-deps: ats-deps
+	@$(PY) -c "import sentence_transformers" >/dev/null 2>&1 || \
+	 { printf "Installing sentence-transformers (~80MB)... "; \
+	   $(PIP) install sentence-transformers >/dev/null 2>&1 && \
+	   printf "✓\n"; }
+
+ats-semantic: ats-semantic-deps
+	@[ -n "$(JD)" ] || { echo "Usage: make ats-semantic JD=path/to/jd.txt"; exit 1; }
+	-@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)" --semantic
+
+ats-llm: ats-deps
+	@[ -n "$(JD)" ] || { echo "Usage: make ats-llm JD=path/to/jd.txt"; exit 1; }
+	@[ -n "$$ANTHROPIC_API_KEY" ] || [ -n "$$OPENAI_API_KEY" ] || \
+	 { echo "Set ANTHROPIC_API_KEY or OPENAI_API_KEY first"; exit 1; }
+	-@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)" --llm
 

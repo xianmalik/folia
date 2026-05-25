@@ -1,0 +1,1 @@
+/usr/bin/bash: .venv/bin/pip: /mnt/c/gh/folia/.venv/bin/python3: bad interpreter: No such file or directory

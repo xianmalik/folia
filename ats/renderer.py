@@ -209,21 +209,38 @@ def _render_jd(result, use_color: bool) -> None:
         print(f"  {c(border_col)}│{c(BOLD)}{c(WHITE)}  {title}{' ' * title_pad}{c(NC)}{c(border_col)}│{c(NC)}")
         print(f"  {c(border_col)}├{'─' * BOX_W}┤{c(NC)}")
 
+    # v2: show missing must-have keywords prominently before matched keywords
+    missing_must = getattr(result, "missing_must_keywords", [])
+    if missing_must:
+        _box_header(RED, "⚠  Missing MUST-HAVE Keywords  (each adds penalty)")
+        for ln in _wrap(missing_must):
+            _plain_row(RED, RED, ln)
+        print(f"  {c(RED)}╰{'─' * BOX_W}╯{c(NC)}")
+        print()
+        print(f"  {c(RED)}{c(BOLD)}🚨  These required keywords were not found.{c(NC)}")
+        print(f"  {c(GRAY)}    Add them verbatim to your Skills or Experience section.{c(NC)}")
+        print()
+
     if result.matched_keywords:
         direct = [m for m in result.matched_keywords if m.matched_via == "direct"]
         ontology = [m for m in result.matched_keywords if m.matched_via == "ontology"]
         fuzzy = [m for m in result.matched_keywords if m.matched_via == "fuzzy"]
+        semantic = [m for m in result.matched_keywords if m.matched_via == "semantic"]
 
         _box_header(GREEN, "Matched Keywords")
         for group, label, col in [
             (direct,   "✓ Direct", GREEN),
             (ontology, "~ Ontology", YELLOW),
             (fuzzy,    "≈ Fuzzy", YELLOW),
+            (semantic, "≃ Semantic", CYAN),
         ]:
             if not group:
                 continue
+            # v2: show tier badge for must-tier matches
+            must_in_group = [m for m in group if getattr(m, "tier", "neutral") == "must"]
+            tier_note = f"  {c(RED)}[{len(must_in_group)} must]{c(NC)}" if must_in_group else ""
             pad = CONTENT_W - len(label)
-            print(f"  {c(GREEN)}│{c(NC)}  {c(col)}{c(BOLD)}{label}{c(NC)}{' ' * max(pad, 0)}  {c(GREEN)}│{c(NC)}")
+            print(f"  {c(GREEN)}│{c(NC)}  {c(col)}{c(BOLD)}{label}{c(NC)}{tier_note}{' ' * max(pad - (len(f'  [{len(must_in_group)} must]') if must_in_group else 0), 0)}  {c(GREEN)}│{c(NC)}")
             kw_indent = "    "
             for ln in _wrap([m.keyword for m in group], indent=len(kw_indent)):
                 pad = CONTENT_W - len(kw_indent) - len(ln)
@@ -231,13 +248,22 @@ def _render_jd(result, use_color: bool) -> None:
         print(f"  {c(GREEN)}╰{'─' * BOX_W}╯{c(NC)}")
         print()
 
-    if result.missing_keywords:
+    # v2: show remaining missing keywords (non-must or unclassified)
+    other_missing = [k for k in result.missing_keywords if k not in missing_must]
+    if other_missing:
+        _box_header(YELLOW, "Missing Keywords (preferred / neutral)")
+        for ln in _wrap(other_missing):
+            _plain_row(YELLOW, YELLOW, ln)
+        print(f"  {c(YELLOW)}╰{'─' * BOX_W}╯{c(NC)}")
+        print()
+    elif result.missing_keywords and not missing_must:
         _box_header(RED, "Missing Keywords")
         for ln in _wrap(result.missing_keywords):
             _plain_row(RED, RED, ln)
         print(f"  {c(RED)}╰{'─' * BOX_W}╯{c(NC)}")
         print()
 
+    if result.missing_keywords:
         print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")
         print(f"  {c(YELLOW)}💡  Suggestion:{c(NC)} add missing keywords naturally to your experience bullets.")
         print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")

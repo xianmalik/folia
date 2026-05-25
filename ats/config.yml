@@ -21,6 +21,27 @@ jd_match:
     title: 0.25
     experience: 0.20
     education: 0.15
+
+  # Tier multipliers — must-have keywords are weighted more heavily
+  # A missed must-have keyword hurts more than a missed nice-to-have
+  tier_multipliers:
+    must: 2.0                   # required/must-have keywords count double
+    preferred: 1.0              # nice-to-have keywords count normally
+    neutral: 0.75               # unclassified keywords count slightly less
+
+  # Flat penalty per missed must-have keyword, capped at must_miss_penalty_cap
+  must_miss_penalty: 5.0
+  must_miss_penalty_cap: 30.0
+
+  # Section weights — where a keyword appears in the resume matters
+  # Explicitly listed in Skills > Experience/Projects > Summary > Education
+  section_weights:
+    skills: 1.00
+    experience: 0.85
+    projects: 0.85
+    summary: 0.70
+    education: 0.50
+
   experience_years:
     ideal: 8                    # years of experience for a perfect experience score
     good: 5

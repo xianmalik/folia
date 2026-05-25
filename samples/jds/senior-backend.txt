@@ -1,0 +1,42 @@
+Senior Backend Engineer — Platform
+
+About the Role
+
+We are hiring a Senior Backend Engineer to strengthen our platform infrastructure. You will build high-throughput Node.js services, design database schemas, and help migrate a monolith toward a service-oriented architecture.
+
+Requirements
+
+- 5+ years of backend engineering experience
+- Production-grade Node.js and TypeScript development
+- Strong PostgreSQL experience: complex queries, indexing strategies, connection pooling
+- Redis for caching, pub/sub, rate limiting, and distributed locks
+- GraphQL API design and schema federation experience
+- JWT and OAuth 2.0 authentication and authorization implementation
+- Containerization with Docker and deployment on AWS
+- Solid understanding of microservices patterns and inter-service communication
+- Experience with message queues (AWS SQS, RabbitMQ, or Kafka)
+- GitHub Actions or other CI/CD tooling for automated testing and deployment
+
+Nice to Have
+
+- Experience with Prisma or TypeORM
+- WebSocket implementation for real-time features
+- Familiarity with distributed tracing (Datadog, OpenTelemetry)
+- Knowledge of database replication and read-replica patterns
+- Go or Rust experience for performance-critical services
+
+Responsibilities
+
+- Build and maintain core platform APIs consumed by multiple product teams
+- Design and implement database schemas optimized for high read/write throughput
+- Lead technical design reviews and mentor junior engineers
+- Instrument services with logging, metrics, and alerting using Sentry or Datadog
+- Participate in on-call rotation for backend services
+
+Compensation and Benefits
+
+- $160,000–$195,000 base salary
+- Equity package
+- Remote-first, North America preferred
+- Health and dental coverage
+- 4 weeks PTO plus company holidays

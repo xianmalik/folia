@@ -1,0 +1,45 @@
+AI-Integrated Full-Stack Engineer
+
+About the Role
+
+We are building a next-generation AI productivity platform. We need a Full-Stack Engineer who can work across LLM integrations, real-time React dashboards, and Python backend services. If you have shipped agentic AI features in production, we want to talk.
+
+Requirements
+
+- 4+ years of full-stack engineering experience
+- TypeScript proficiency across both frontend (React, Next.js) and backend (Node.js)
+- LLM integration experience: OpenAI API, Anthropic API, or equivalent
+- Prompt engineering and context management for production LLM features
+- Python backend experience: FastAPI or Django for ML-serving APIs
+- Real-time UI with WebSockets or Server-Sent Events (SSE) for streaming LLM output
+- PostgreSQL or Supabase for application data
+- REST API design and integration between TypeScript and Python services
+- Docker for local development and deployment
+- GitHub Actions or similar CI/CD tooling
+
+Nice to Have
+
+- Model Context Protocol (MCP) or tool-calling / function-calling implementations
+- Experience building agentic AI workflows (multi-step reasoning, agent orchestration)
+- Familiarity with vector databases (Pinecone, pgvector, Weaviate)
+- OpenAI Assistants API or streaming completions with response caching
+- Machine learning pipeline integration (model inference, preprocessing, result rendering)
+- Exposure to AWS Lambda or serverless deployment of AI endpoints
+
+Responsibilities
+
+- Build streaming AI chat interfaces with token-by-token rendering
+- Integrate LLM APIs into existing TypeScript services with proper error handling, retries, and cost tracking
+- Collaborate with ML engineers to expose Python model inference endpoints as clean REST APIs
+- Implement prompt versioning, evaluation pipelines, and A/B testing for LLM features
+- Own the real-time data visualization layer for AI performance metrics
+
+What You Will Find Here
+
+- Cutting-edge AI stack with access to frontier models
+- $135,000–$170,000 base salary
+- Fully remote, async-first culture
+- Equity in a fast-growing Series A company
+- $3,000 annual AI tools stipend
+- Health and dental coverage
+- 20 days PTO

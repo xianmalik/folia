@@ -14,6 +14,30 @@
     "paced", "driven", "member", "partner", "startup", "remote", "hybrid", "onsite",
     "fulltime", "part", "contract", "compensation", "salary", "equity", "based", "using",
     "building", "writing", "working", "etc", "ie", "eg",
+    "library", "libraries", "state", "store", "stores", "hook", "hooks",
+    "context", "provider", "wrapper", "component", "components", "module", "modules",
+    "package", "packages", "query", "queries", "toolkit", "vitals", "metric", "metrics",
+    "pattern", "patterns", "layer", "layers", "flow", "flows", "pipeline", "pipelines",
+    "service", "services", "endpoint", "endpoints", "route", "routes", "schema", "schemas",
+    "interface", "interfaces", "type", "types", "class", "classes", "function", "functions",
+    "method", "methods", "object", "objects", "array", "arrays", "string", "strings",
+    "server", "client", "backend", "frontend", "database", "cache", "queue",
+    "cluster", "node", "nodes", "pod", "pods", "container", "containers",
+    "stack", "stacks", "repo", "repository", "codebase", "architecture",
+    "practice", "practices", "standard", "standards", "principle", "principles",
+    "feature", "features", "version", "versions", "release", "releases",
+    "build", "builds", "test", "tests", "deploy", "deploys", "review", "reviews",
+    "update", "updates", "change", "changes", "fix", "fixes", "bug", "bugs",
+    "page", "pages", "view", "views", "screen", "screens", "form", "forms",
+    "data", "users", "user", "event", "events", "request", "requests", "response",
+    "session", "token", "tokens", "key", "keys", "value", "values",
+    "level", "levels", "step", "steps", "stage", "stages",
+    "design", "designs", "style", "styles", "theme", "themes", "color", "colors",
+    "size", "sizes", "format", "formats", "layout", "layouts",
+    "support", "maintenance", "monitoring", "logging", "tracking",
+    "security", "performance", "scalability", "reliability", "availability",
+    "integration", "testing", "deployment", "automation", "configuration",
+    "documentation", "specification", "implementation", "architecture", "infrastructure",
     "leave", "maternity", "paternity", "hajj", "umrah", "pilgrimage",
     "lunch", "dinner", "breakfast", "tea", "coffee", "snack",
     "gym", "fitness", "wellness", "health", "medical", "insurance",
@@ -46,20 +70,66 @@
     "quarterly", "annual", "summer", "winter"
   ],
 
+  "must_have_section_patterns": [
+    "requirements",
+    "qualifications",
+    "must.?have",
+    "required",
+    "essential",
+    "you.?must",
+    "you.?will.?need",
+    "you.?have",
+    "you.?bring",
+    "you.?are",
+    "minimum qualifications",
+    "basic qualifications",
+    "what you.ll need",
+    "what we.re looking for",
+    "what you need"
+  ],
+
+  "preferred_section_patterns": [
+    "preferred",
+    "nice.?to.?have",
+    "bonus",
+    "plus",
+    "good.?to.?have",
+    "advantage",
+    "desirable",
+    "ideally",
+    "a plus",
+    "would be nice",
+    "extra credit",
+    "not required"
+  ],
+
   "role_equiv": {
     "developer": "engineer",
     "developers": "engineer",
     "programmer": "engineer",
     "programmers": "engineer",
     "coder": "engineer",
-    "dev": "engineer"
+    "dev": "engineer",
+    "frontend": "engineer",
+    "back-end": "engineer",
+    "backend": "engineer",
+    "fullstack": "engineer",
+    "full-stack": "engineer",
+    "software": "engineer",
+    "web": "engineer",
+    "platform": "engineer",
+    "applications": "engineer",
+    "ui": "engineer",
+    "ux": "designer"
   },
 
   "title_words": [
     "engineer", "developer", "manager", "lead", "architect", "designer",
     "analyst", "scientist", "intern", "head", "director", "specialist",
     "consultant", "staff", "principal", "frontend", "backend", "fullstack",
-    "full-stack", "software", "mobile", "data", "devops", "sre", "qa"
+    "full-stack", "software", "mobile", "data", "devops", "sre", "qa",
+    "platform", "infrastructure", "cloud", "security", "reliability",
+    "machine", "learning", "ml", "ai", "product"
   ],
 
   "noise_section_patterns": [
@@ -83,7 +153,21 @@
     "Node\\.js", "Next\\.js", "Vue\\.js", "React\\.js", "Express\\.js",
     "TypeScript", "JavaScript", "PostgreSQL", "MongoDB", "GraphQL",
     "WebSocket", "WebSockets", "FastAPI", "CI/CD", "REST\\s?API",
-    "GitHub\\s?Actions", "TailwindCSS", "Tailwind\\s?CSS"
+    "GitHub\\s?Actions", "TailwindCSS", "Tailwind\\s?CSS",
+    "React\\s?Query", "React\\s?Testing\\s?Library",
+    "AWS\\s?(?:S3|EC2|Lambda|RDS|ECS|CDK|SNS|SQS|IAM|CloudFront)?",
+    "OpenAI\\s?API", "Anthropic\\s?API",
+    "Server-Sent\\s?Events?", "SSE",
+    "Shadcn(?:/ui)?", "Radix\\s?UI",
+    "Prisma\\s?ORM?", "Drizzle\\s?ORM?",
+    "Sentry", "Datadog", "OpenTelemetry",
+    "Kubernetes", "Terraform", "Helm",
+    "RabbitMQ", "Apache\\s?Kafka",
+    "Playwright", "Cypress",
+    "Storybook",
+    "pgvector", "Pinecone", "Weaviate",
+    "Supabase", "Firebase",
+    "Docker\\s?Compose?"
   ],
 
   "action_verbs": [
