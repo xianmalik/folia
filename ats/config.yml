@@ -46,6 +46,7 @@ date_parser:
   year_max: 2050                # latest plausible year in a date range
 
 llm:
-  model: llama-3.3-70b-versatile  # model to use for LLM-backed analysis
-  temperature: 0.1                # lower = more deterministic outputs
-  max_tokens: 4096                # max tokens per LLM response
+  cerebras_model: gpt-oss-120b           # primary backend (120B reasoning model, free tier)
+  groq_model: llama-3.3-70b-versatile   # fallback backend (auto-used if Cerebras rate-limits)
+  temperature: 0.1                      # lower = more deterministic outputs
+  max_tokens: 4096                      # max tokens per LLM response

@@ -4,6 +4,7 @@
 # Auto-load .env if it exists and export its variables to subprocesses.
 # Format: KEY=value (one per line, # for comments — no quotes, no 'export' prefix).
 -include .env
+export CEREBRAS_API_KEY
 export GROQ_API_KEY
 
 .PHONY: build watch open clean deps venv lint format test release docker-build ats ats-deps
