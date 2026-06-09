@@ -60,7 +60,7 @@ docker-build:
 	@docker build -t folia .
 	@docker run --rm -v "$(PWD)/dist:/app/dist" folia
 
-# Install spaCy and its model — only needed when running without a Groq API key.
+# Install spaCy and its model — only needed when running without an LLM API key.
 ats-deps: deps
 	@$(PY) -c "import spacy; spacy.load('en_core_web_sm')" >/dev/null 2>&1 || \
 	 { printf "Installing spaCy prerequisites... "; \
@@ -74,8 +74,8 @@ ats-deps: deps
 #   make ats JD=jd.txt   → JD match  (JD or jd, either case works)
 #
 # Backend selection (automatic, no flags needed):
-#   GROQ_API_KEY set in .env  →  Groq LLM  (semantic, no extra installs)
-#   GROQ_API_KEY not set      →  spaCy NLP  (run `make ats-deps` first)
+#   GROQ_API_KEY set in .env  →  LLM  (semantic matching, no extra installs)
+#   GROQ_API_KEY not set      →  NLP  (run `make ats-deps` first)
 #
 # Override flags still work directly via Python if needed:
 #   .venv/bin/python3 scripts/ats_check.py --jd jd.txt --no-groq

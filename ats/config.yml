@@ -13,6 +13,9 @@ health:
   summary_word_max: 80          # summary too long above this
   min_tech_keywords: 6          # distinct tech keywords expected in summary
   min_impact_phrases: 3         # impact phrases expected in summary
+  quant_ratio_good: 0.50        # ≥50% of bullets should contain a measurable metric
+  quant_ratio_ok: 0.30          # ≥30% is acceptable (below = low score)
+  passive_ratio_warn: 0.20      # passive/weak bullets above this fraction = warning
 
 jd_match:
   pass_threshold: 70.0          # minimum overall score to pass JD matching
@@ -31,6 +34,7 @@ jd_match:
     ontology: 0.70              # score for a match via ontology implication
     fuzzy: 0.40                 # score for a fuzzy string match
   fuzzy_min_ratio: 85           # minimum rapidfuzz ratio (0-100) to count as a match
+  max_rewrites: 5               # max bullet rewrites to generate via LLM
 
 renderer:
   thresh_pass: 0.90             # ratio at or above which a check shows a ✓
@@ -41,7 +45,7 @@ date_parser:
   year_min: 1950                # earliest plausible year in a date range
   year_max: 2050                # latest plausible year in a date range
 
-groq:
-  model: llama-3.3-70b-versatile  # Groq model to use (see console.groq.com for options)
+llm:
+  model: llama-3.3-70b-versatile  # model to use for LLM-backed analysis
   temperature: 0.1                # lower = more deterministic outputs
-  max_tokens: 4096                # max tokens per Groq response
+  max_tokens: 4096                # max tokens per LLM response

@@ -4,15 +4,15 @@ ATS checker for folia resumes.
 
 Reads resume content directly from data/*.yml (no PDF extraction needed)
 and scores it either as a standalone CV health check or against a job description.
-If GROQ_API_KEY is set, Groq LLM is used automatically for JD matching.
+If GROQ_API_KEY is set, the LLM backend is used automatically for JD matching.
 
 Usage:
-  python3 scripts/ats_check.py                      # CV health check
-  python3 scripts/ats_check.py --jd jd.txt          # score against JD (Groq if key set, else spaCy)
-  python3 scripts/ats_check.py --jd -               # JD from stdin
-  python3 scripts/ats_check.py --jd jd.txt --no-groq  # force spaCy even if key is set
-  make ats                                           # via Makefile
-  make ats JD=jd.txt                                # via Makefile with JD
+  python3 scripts/ats_check.py                         # CV health check
+  python3 scripts/ats_check.py --jd jd.txt             # JD match (LLM if key set, else NLP)
+  python3 scripts/ats_check.py --jd -                  # JD from stdin
+  python3 scripts/ats_check.py --jd jd.txt --no-llm   # force NLP backend
+  make ats                                              # via Makefile
+  make ats JD=jd.txt                                   # via Makefile with JD
 """
 from __future__ import annotations
 
@@ -20,10 +20,14 @@ import argparse
 import sys
 from pathlib import Path
 
-# Add repo root to path so `from ats import ...` finds ats/ at root
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ats import loader, health, renderer  # noqa: E402
+
+_CYAN  = "\033[0;36m"
+_GREEN = "\033[0;32m"
+_GRAY  = "\033[0;37m"
+_NC    = "\033[0m"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -32,12 +36,12 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 scripts/ats_check.py                              # CV health check\n"
-            "  python3 scripts/ats_check.py --jd jd.txt                 # JD match (auto Groq if key set)\n"
-            "  cat jd.txt | python3 scripts/ats_check.py --jd -         # JD from stdin\n"
-            "  python3 scripts/ats_check.py --jd jd.txt --no-groq       # force spaCy backend\n"
-            "  make ats                                                   # health check\n"
-            "  make ats JD=jd.txt                                        # JD match (auto Groq if key set)"
+            "  python3 scripts/ats_check.py                             # CV health check\n"
+            "  python3 scripts/ats_check.py --jd jd.txt                # JD match (auto LLM if key set)\n"
+            "  cat jd.txt | python3 scripts/ats_check.py --jd -        # JD from stdin\n"
+            "  python3 scripts/ats_check.py --jd jd.txt --no-llm      # force NLP backend\n"
+            "  make ats                                                  # health check\n"
+            "  make ats JD=jd.txt                                       # JD match (auto LLM if key set)"
         ),
     )
     parser.add_argument(
@@ -46,18 +50,18 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="path to job description text file, or '-' to read from stdin",
     )
-    groq_group = parser.add_mutually_exclusive_group()
-    groq_group.add_argument(
-        "--groq",
+    llm_group = parser.add_mutually_exclusive_group()
+    llm_group.add_argument(
+        "--llm",
         action="store_true",
         default=False,
-        help="force Groq LLM backend (requires GROQ_API_KEY)",
+        help="force LLM backend (requires GROQ_API_KEY)",
     )
-    groq_group.add_argument(
-        "--no-groq",
+    llm_group.add_argument(
+        "--no-llm",
         action="store_true",
         default=False,
-        help="force spaCy backend even if GROQ_API_KEY is set",
+        help="force NLP backend even if GROQ_API_KEY is set",
     )
     parser.add_argument(
         "--threshold",
@@ -74,25 +78,40 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_groq(args) -> bool:
-    """Determine whether to use the Groq backend for JD matching.
+def _resolve_llm(args) -> bool:
+    """Determine whether to use the LLM backend for JD matching.
 
-    Priority: --no-groq flag > --groq flag > auto-detect from GROQ_API_KEY.
+    Priority: --no-llm > --llm > auto-detect from GROQ_API_KEY.
     """
-    if args.no_groq:
+    if args.no_llm:
         return False
-    if args.groq:
+    if args.llm:
         return True
-    from ats.groq_analyzer import is_available
+    from ats.llm_analyzer import is_available
     return is_available()
+
+
+def _step(n: int, total: int, label: str, width: int = 50) -> None:
+    prefix = f"  {_CYAN}[{n}/{total}]{_NC} {label}"
+    plain_len = 2 + len(f"[{n}/{total}]") + 1 + len(label)
+    pad = max(1, width - plain_len)
+    print(f"{prefix}{' ' * pad}", end="", flush=True)
+
+
+def _done(note: str = "") -> None:
+    note_str = f"  {_GRAY}{note}{_NC}" if note else ""
+    print(f"{_GREEN}✓{_NC}{note_str}")
 
 
 def main() -> int:
     args = _parse_args()
-    resume = loader.load()
 
     if args.jd is not None:
         from ats import jd_matcher
+
+        _step(1, 1, "Loading resume data…")
+        resume = loader.load()
+        _done()
 
         if args.jd == "-":
             jd_text = sys.stdin.read()
@@ -107,10 +126,20 @@ def main() -> int:
             print("ats_check: JD text is empty", file=sys.stderr)
             return 1
 
-        use_groq = _resolve_groq(args)
-        result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_groq=use_groq)
+        use_llm = _resolve_llm(args)
+        result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=use_llm)
     else:
+        _step(1, 3, "Loading resume data…")
+        resume = loader.load()
+        _done()
+
+        _step(2, 3, "Running ATS health checks…")
         result = health.run(resume, threshold=args.threshold)
+        _done()
+
+        _step(3, 3, "Generating report…")
+        _done()
+        print()
 
     renderer.render(result, no_color=args.no_color)
     return 0 if result.passed else 1

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,6 +26,36 @@ _SUMMARY_WORD_MAX       = _C["summary_word_max"]
 _MIN_TECH_KEYWORDS      = _C["min_tech_keywords"]
 _MIN_IMPACT_PHRASES     = _C["min_impact_phrases"]
 _PASS_THRESHOLD         = _C["pass_threshold"]
+_QUANT_RATIO_GOOD       = _C["quant_ratio_good"]
+_QUANT_RATIO_OK         = _C["quant_ratio_ok"]
+_PASSIVE_RATIO_WARN     = _C["passive_ratio_warn"]
+
+# ── Quantification detection ─────────────────────────────────────────────────
+# Matches numbers followed by units (%, x, k, ms…), dollar amounts, and N+ forms.
+_METRIC_RE = re.compile(
+    r"\$[\d,]+(?:\.\d+)?[kmb]?"                         # $10k, $1.5m
+    r"|\b\d[\d,]*(?:\.\d+)?\s*(?:"
+    r"%|percent|\+|x\b|[kmb]\b"                          # 25%, 5+, 3x, 10k
+    r"|ms\b|s\b|min(?:utes?)?\b|hrs?\b|hours?\b"         # time units
+    r"|days?\b|weeks?\b|months?\b|years?\b"              # time periods
+    r")",
+    re.IGNORECASE,
+)
+
+# ── Grammar / voice detection ────────────────────────────────────────────────
+_PASSIVE_RE = re.compile(
+    r"\b(?:was|were|been|being)\s+\w+(?:ed|en)\b"       # was/were + past participle
+    r"|\b(?:responsible for|worked on|assisted (?:with|in)"
+    r"|helped (?:with|to)|part of|involved in"
+    r"|tasked with|contributed to)\b",
+    re.IGNORECASE,
+)
+_PRONOUN_RE = re.compile(r"\b(?:I|me|my|we|our|us)\b")
+_WEAK_STARTERS: set[str] = {
+    "helped", "assisted", "supported", "worked", "participated",
+    "involved", "contributed", "collaborated", "coordinated",
+    "liaised", "facilitated", "aided",
+}
 
 
 @dataclass
@@ -59,8 +90,12 @@ def run(resume: ResumeData | None, threshold: float = _PASS_THRESHOLD) -> Health
         _check_bullets(resume),
         _check_skills(resume),
         _check_summary(resume),
+        _check_quantification(resume),
+        _check_grammar(resume),
     ]
-    total = round(sum(c.score for c in checks), 1)
+    raw = sum(c.score for c in checks)
+    max_raw = sum(c.max_score for c in checks)
+    total = round((raw / max_raw) * 100, 1) if max_raw else 0.0
     return HealthResult(checks=checks, total_score=total, passed=total >= threshold, threshold=threshold)
 
 
@@ -277,3 +312,95 @@ def _check_summary(resume: ResumeData) -> CheckResult:
     if not findings:
         findings = [f"{word_count} words · {tech_count} tech keywords · {impact_count} impact phrases"]
     return CheckResult("summary_quality", "Summary Quality", score, 10.0, findings)
+
+
+def _check_quantification(resume: ResumeData) -> CheckResult:
+    all_items = [item for pos in resume.all_positions() for item in pos.items]
+    if not all_items:
+        return CheckResult("quantification", "Quantification", 0.0, 10.0, ["No bullet points found"])
+
+    quantified = [item for item in all_items if _METRIC_RE.search(item)]
+    ratio = len(quantified) / len(all_items)
+
+    if ratio >= _QUANT_RATIO_GOOD:
+        score = 10.0
+    elif ratio >= _QUANT_RATIO_OK:
+        score = 6.0
+    else:
+        score = round(max(0.0, ratio / _QUANT_RATIO_OK) * 4.0, 1)
+
+    findings = []
+    if ratio < _QUANT_RATIO_GOOD:
+        findings.append(
+            f"{len(quantified)}/{len(all_items)} bullets ({ratio:.0%}) contain measurable metrics "
+            f"(target: ≥{_QUANT_RATIO_GOOD:.0%})"
+        )
+        unquantified = [item for item in all_items if not _METRIC_RE.search(item)][:3]
+        for ex in unquantified:
+            snippet = ex[:75] + "…" if len(ex) > 75 else ex
+            findings.append(f"Add metrics to: \"{snippet}\"")
+    else:
+        findings = [
+            f"{len(quantified)}/{len(all_items)} bullets ({ratio:.0%}) contain measurable metrics"
+        ]
+    return CheckResult("quantification", "Quantification", score, 10.0, findings)
+
+
+def _check_grammar(resume: ResumeData) -> CheckResult:
+    all_items = [item for pos in resume.all_positions() for item in pos.items]
+    if not all_items:
+        return CheckResult("grammar_voice", "Grammar & Voice", 0.0, 10.0, ["No bullet points found"])
+
+    findings = []
+
+    # (a) Passive voice / weak phrases → 5 pts
+    passive_hits = [item for item in all_items if _PASSIVE_RE.search(item)]
+    passive_ratio = len(passive_hits) / len(all_items)
+    if passive_ratio <= 0.05:
+        passive_score = 5.0
+    elif passive_ratio <= _PASSIVE_RATIO_WARN:
+        passive_score = 3.0
+        findings.append(
+            f"{len(passive_hits)} bullet(s) contain passive constructions or weak phrases"
+        )
+    else:
+        passive_score = 0.0
+        findings.append(
+            f"{len(passive_hits)}/{len(all_items)} bullets ({passive_ratio:.0%}) use passive voice "
+            f"(target: ≤{_PASSIVE_RATIO_WARN:.0%})"
+        )
+        for ex in passive_hits[:2]:
+            snippet = ex[:75] + "…" if len(ex) > 75 else ex
+            findings.append(f"  Passive: \"{snippet}\"")
+
+    # (b) First-person pronouns → 3 pts
+    pronoun_hits = [item for item in all_items if _PRONOUN_RE.search(item)]
+    if not pronoun_hits:
+        pronoun_score = 3.0
+    else:
+        pronoun_score = 0.0
+        findings.append(
+            f"{len(pronoun_hits)} bullet(s) contain first-person pronouns (I, my, we, our)"
+        )
+
+    # (c) Weak opening verbs → 2 pts
+    def _first_word(s: str) -> str:
+        words = s.strip().split()
+        return words[0].lower().rstrip(".,;:") if words else ""
+
+    weak_hits = [item for item in all_items if _first_word(item) in _WEAK_STARTERS]
+    if not weak_hits:
+        weak_score = 2.0
+    elif len(weak_hits) <= 2:
+        weak_score = 1.0
+        findings.append(f"{len(weak_hits)} bullet(s) open with weak verbs (helped, assisted, worked…)")
+    else:
+        weak_score = 0.0
+        findings.append(
+            f"{len(weak_hits)} bullet(s) open with weak verbs — replace with strong action verbs"
+        )
+
+    score = passive_score + pronoun_score + weak_score
+    if not findings:
+        findings = [f"All {len(all_items)} bullets use active voice and strong language"]
+    return CheckResult("grammar_voice", "Grammar & Voice", score, 10.0, findings)

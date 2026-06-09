@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,6 +41,7 @@ _KW_SCORE_ONTOLOGY = _JC["keyword_scores"]["ontology"]
 _KW_SCORE_FUZZY    = _JC["keyword_scores"]["fuzzy"]
 _FUZZY_MIN_RATIO   = _JC["fuzzy_min_ratio"]
 _PASS_THRESHOLD    = _JC["pass_threshold"]
+_MAX_REWRITES      = _JC["max_rewrites"]
 
 _GENERIC_TERMS: set[str] = set(_KW["generic_terms"])
 _SENIORITY: set[str] = set(_KW["seniority"])
@@ -72,6 +74,14 @@ class KeywordMatch:
 
 
 @dataclass
+class BulletRewrite:
+    keyword: str    # the missing keyword this rewrite incorporates
+    role: str       # "Job Title at Company"
+    original: str   # original bullet text
+    rewritten: str  # suggested humanlike rewrite
+
+
+@dataclass
 class EduGap:
     resume_level: str       # e.g. "BSc"
     resume_field: str       # e.g. "Computer Science"
@@ -101,7 +111,9 @@ class JDResult:
     mode: str = "jd"
     suggestions: list[str] = field(default_factory=list)
     role_fit: str = ""
-    backend: str = "spacy"  # "spacy" | "groq"
+    backend: str = "spacy"  # "spacy" | "llm"
+    keyword_density: dict[str, int] = field(default_factory=dict)  # section → hit count
+    bullet_rewrites: list[BulletRewrite] = field(default_factory=list)
 
 
 def _load_spacy():
@@ -416,25 +428,62 @@ def run(
     resume: ResumeData,
     jd_text: str,
     threshold: float = _PASS_THRESHOLD,
-    use_groq: bool = False,
+    use_groq: bool = False,  # kept for call-site compat; prefer use_llm
+    use_llm: bool = False,
 ) -> JDResult:
     if not jd_text or not jd_text.strip():
         raise ValueError("jd_text must not be empty")
 
-    if use_groq:
-        return _run_groq(resume, jd_text, threshold)
+    if use_llm or use_groq:
+        return _run_llm(resume, jd_text, threshold)
     return _run_spacy(resume, jd_text, threshold)
 
 
-def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
-    nlp = _load_spacy()
-    ontology = ont.load_ontology()
+# ── ANSI helpers for inline step output ─────────────────────────────────────
+_CYAN  = "\033[0;36m"
+_GREEN = "\033[0;32m"
+_GRAY  = "\033[0;37m"
+_BOLD  = "\033[1m"
+_NC    = "\033[0m"
+_STEP_W = 56  # fixed width for the label column
 
+
+def _step(n: int, total: int, label: str) -> None:
+    prefix = f"  {_CYAN}[{n}/{total}]{_NC} {label}"
+    plain_len = 2 + len(f"[{n}/{total}]") + 1 + len(label)
+    pad = max(1, _STEP_W - plain_len)
+    print(f"{prefix}{' ' * pad}", end="", flush=True)
+
+
+def _done(note: str = "") -> None:
+    note_str = f"  {_GRAY}{note}{_NC}" if note else ""
+    print(f"{_GREEN}✓{_NC}{note_str}")
+
+
+def _compute_density(matched: list[KeywordMatch]) -> dict[str, int]:
+    """Count how many matched keywords appear in each resume section."""
+    density: Counter[str] = Counter()
+    for km in matched:
+        for section in km.found_in:
+            density[section] += 1
+    return dict(density)
+
+
+def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
+    print()
+    _step(1, 4, "Parsing job description…")
+    ontology = ont.load_ontology()
     jd_title = _extract_jd_title(jd_text)
     cleaned_jd = _strip_nontechnical_sections(jd_text)
+    _done(f"title: {jd_title!r}" if jd_title else "")
+
+    _step(2, 4, "Extracting keywords via NLP…")
+    nlp = _load_spacy()
     doc = nlp(cleaned_jd)
     jd_keywords = _extract_jd_keywords(doc, ontology)
+    _done(f"{len(jd_keywords)} keywords identified")
 
+    _step(3, 4, "Matching resume against keywords…")
     section_texts = _build_section_texts(resume)
     skill_items = [item for sc in resume.skills for item in sc.items]
     all_skill_names = skill_items[:]
@@ -446,7 +495,6 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
     matched: list[KeywordMatch] = []
     missing: list[str] = []
     total_weighted = 0.0
-
     for kw in jd_keywords:
         score, found_in, via = _score_keyword(kw, section_texts, expanded_norms, skill_items)
         if score > 0:
@@ -454,18 +502,21 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
             total_weighted += score
         else:
             missing.append(kw)
+    _done(f"{len(matched)} matched · {len(missing)} missing")
 
+    _step(4, 4, "Computing weighted scores…")
     keyword_score = (total_weighted / len(jd_keywords)) * 100.0 if jd_keywords else 0.0
     title_score = _title_score(jd_title, resume.positions)
     exp_score, years_detected = _experience_score(resume, jd_text)
     edu_score, edu_gap = _education_score(resume, jd_text, ontology)
-
     overall = (
         keyword_score * _W_KEYWORD
         + title_score * _W_TITLE
         + exp_score * _W_EXP
         + edu_score * _W_EDU
     )
+    _done()
+    print()
 
     return JDResult(
         overall_score=round(overall, 1),
@@ -483,57 +534,77 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         edu_gap=edu_gap,
         author_name=resume.contact.full_name,
         backend="spacy",
+        keyword_density=_compute_density(matched),
     )
 
 
-# Map Groq match types to the score values used by the spaCy path so the
-# weighted keyword score stays comparable across backends.
-_GROQ_SCORE_MAP = {
-    "direct": _KW_SCORE_DIRECT,
+# Map LLM match types → score values and renderer "matched_via" labels.
+_LLM_SCORE_MAP = {
+    "direct":   _KW_SCORE_DIRECT,
     "semantic": _KW_SCORE_ONTOLOGY,
-    "implied": _KW_SCORE_FUZZY,
+    "implied":  _KW_SCORE_FUZZY,
 }
-# Renderer reuses "matched_via" labels from the spaCy path.
-_GROQ_VIA_MAP = {
-    "direct": "direct",
+_LLM_VIA_MAP = {
+    "direct":   "direct",
     "semantic": "ontology",
-    "implied": "fuzzy",
+    "implied":  "fuzzy",
 }
 
 
-def _run_groq(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
-    from . import groq_analyzer
+def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
+    from . import llm_analyzer
 
-    jd_title = _extract_jd_title(jd_text)
+    print()
+    _step(1, 5, "Parsing job description…")
     ontology = ont.load_ontology()
+    jd_title = _extract_jd_title(jd_text)
+    _done(f"title: {jd_title!r}" if jd_title else "")
 
-    print("  [groq] Extracting JD keywords via Groq…", flush=True)
-    jd_keywords = groq_analyzer.extract_jd_keywords(jd_text)
+    _step(2, 5, "Extracting keywords via LLM…")
+    jd_keywords = llm_analyzer.extract_jd_keywords(jd_text)
+    _done(f"{len(jd_keywords)} keywords identified")
 
-    print("  [groq] Semantic resume matching via Groq…", flush=True)
-    analysis = groq_analyzer.analyze_resume_match(resume, jd_text, jd_keywords)
+    _step(3, 5, "Semantic resume matching via LLM…")
+    analysis = llm_analyzer.analyze_resume_match(resume, jd_text, jd_keywords)
+    _done(f"{len(analysis.matched)} matched · {len(analysis.missing)} missing")
 
+    _step(4, 5, "Generating bullet rewrites…")
+    raw_rewrites = llm_analyzer.generate_bullet_rewrites(
+        resume, analysis.missing, jd_text, max_rewrites=_MAX_REWRITES
+    )
+    bullet_rewrites = [
+        BulletRewrite(
+            keyword=r.get("keyword", ""),
+            role=r.get("role", ""),
+            original=r.get("original", ""),
+            rewritten=r.get("rewritten", ""),
+        )
+        for r in raw_rewrites
+    ]
+    _done(f"{len(bullet_rewrites)} rewrite(s) generated")
+
+    _step(5, 5, "Computing weighted scores…")
     matched: list[KeywordMatch] = []
     total_weighted = 0.0
-    for gm in analysis.matched:
-        via = _GROQ_VIA_MAP.get(gm.match_type, "direct")
-        score = _GROQ_SCORE_MAP.get(gm.match_type, _KW_SCORE_DIRECT)
-        matched.append(KeywordMatch(keyword=gm.keyword, found_in=gm.found_in, matched_via=via, score=score))
+    for lm in analysis.matched:
+        via   = _LLM_VIA_MAP.get(lm.match_type, "direct")
+        score = _LLM_SCORE_MAP.get(lm.match_type, _KW_SCORE_DIRECT)
+        matched.append(KeywordMatch(keyword=lm.keyword, found_in=lm.found_in, matched_via=via, score=score))
         total_weighted += score
 
-    all_kw_count = len(jd_keywords)
+    all_kw_count  = len(jd_keywords)
     keyword_score = (total_weighted / all_kw_count) * 100.0 if all_kw_count else 0.0
-
-    title_score = _title_score(jd_title, resume.positions)
+    title_score   = _title_score(jd_title, resume.positions)
     exp_score, years_detected = _experience_score(resume, jd_text)
-    edu_score, edu_gap = _education_score(resume, jd_text, ontology)
-
+    edu_score, edu_gap        = _education_score(resume, jd_text, ontology)
     overall = (
         keyword_score * _W_KEYWORD
         + title_score * _W_TITLE
-        + exp_score * _W_EXP
-        + edu_score * _W_EDU
+        + exp_score   * _W_EXP
+        + edu_score   * _W_EDU
     )
+    _done()
+    print()
 
     return JDResult(
         overall_score=round(overall, 1),
@@ -552,5 +623,7 @@ def _run_groq(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         author_name=resume.contact.full_name,
         suggestions=analysis.suggestions,
         role_fit=analysis.role_fit,
-        backend="groq",
+        backend="llm",
+        keyword_density=_compute_density(matched),
+        bullet_rewrites=bullet_rewrites,
     )

@@ -118,12 +118,29 @@ def _render_health(result, use_color: bool) -> None:
     print()
 
 
+def _chunk_text(text: str, width: int) -> list[str]:
+    """Split text into chunks that fit within width characters."""
+    if len(text) <= width:
+        return [text]
+    chunks = []
+    while text:
+        if len(text) <= width:
+            chunks.append(text)
+            break
+        cut = text.rfind(" ", 0, width)
+        if cut == -1:
+            cut = width
+        chunks.append(text[:cut])
+        text = text[cut:].lstrip()
+    return chunks
+
+
 def _render_jd(result, use_color: bool) -> None:
     c = lambda code: _c(code, use_color)
     BOX_W = 76
     author = getattr(result, "author_name", "")
     backend = getattr(result, "backend", "spacy")
-    backend_label = "Groq LLM" if backend == "groq" else "spaCy NLP"
+    backend_label = "LLM" if backend == "llm" else "NLP"
     title_text = f"  folia · ATS Score vs Job Description  [{backend_label}]"
     title_pad = BOX_W - len(title_text)
     print()
@@ -245,18 +262,60 @@ def _render_jd(result, use_color: bool) -> None:
         print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")
         print()
 
+    keyword_density = getattr(result, "keyword_density", {})
+    if keyword_density:
+        total_hits = sum(keyword_density.values())
+        _SECTION_ORDER = ["experience", "skills", "projects", "summary", "education"]
+        ordered = [(s, keyword_density[s]) for s in _SECTION_ORDER if s in keyword_density]
+        ordered += [(s, v) for s, v in keyword_density.items() if s not in _SECTION_ORDER]
+        print(f"  {c(BOLD)}{c(WHITE)}Keyword Density by Section:{c(NC)}")
+        label_w2 = 12
+        bar_w2 = 20
+        for section, hits in ordered:
+            frac = hits / total_hits if total_hits > 0 else 0.0
+            filled = round(frac * bar_w2)
+            bar2 = "█" * filled + "░" * (bar_w2 - filled)
+            col2 = _score_color(frac if frac >= 0.3 else frac + 0.1)
+            pct = f"{frac * 100:.0f}%"
+            print(f"  {section.capitalize().ljust(label_w2)}  {c(col2)}{bar2}{c(NC)}  {str(hits).rjust(2)} hits  {pct.rjust(4)}")
+        print()
+
     role_fit = getattr(result, "role_fit", "")
     suggestions = getattr(result, "suggestions", [])
+    bullet_rewrites = getattr(result, "bullet_rewrites", [])
 
     if role_fit:
-        print(f"  {c(BOLD)}{c(WHITE)}Role Fit Assessment (Groq):{c(NC)}")
+        print(f"  {c(BOLD)}{c(WHITE)}Role Fit Assessment:{c(NC)}")
         print(f"  {c(GRAY)}{role_fit}{c(NC)}")
         print()
 
     if suggestions:
-        print(f"  {c(BOLD)}{c(WHITE)}AI Suggestions (Groq):{c(NC)}")
+        print(f"  {c(BOLD)}{c(WHITE)}AI Suggestions:{c(NC)}")
         for idx, sug in enumerate(suggestions, 1):
             print(f"  {c(CYAN)}{idx}.{c(NC)} {sug}")
+        print()
+
+    if bullet_rewrites:
+        _box_header(CYAN, "Bullet Rewrite Suggestions")
+        for idx, rw in enumerate(bullet_rewrites):
+            if idx > 0:
+                print(f"  {c(CYAN)}├{'─' * BOX_W}┤{c(NC)}")
+            kw_line = f"Keyword: {rw.keyword}  ·  {rw.role}"
+            kw_pad = CONTENT_W - len(kw_line)
+            print(f"  {c(CYAN)}│{c(NC)}  {c(YELLOW)}{c(BOLD)}{kw_line}{c(NC)}{' ' * max(kw_pad, 0)}  {c(CYAN)}│{c(NC)}")
+            # Before
+            before_label = "Before  "
+            for i, chunk in enumerate(_chunk_text(rw.original, CONTENT_W - len(before_label))):
+                lbl = before_label if i == 0 else " " * len(before_label)
+                pad = CONTENT_W - len(lbl) - len(chunk)
+                print(f"  {c(CYAN)}│{c(NC)}  {c(GRAY)}{lbl}{chunk}{c(NC)}{' ' * max(pad, 0)}  {c(CYAN)}│{c(NC)}")
+            # After
+            after_label = "After   "
+            for i, chunk in enumerate(_chunk_text(rw.rewritten, CONTENT_W - len(after_label))):
+                lbl = after_label if i == 0 else " " * len(after_label)
+                pad = CONTENT_W - len(lbl) - len(chunk)
+                print(f"  {c(CYAN)}│{c(NC)}  {c(GREEN)}{lbl}{chunk}{c(NC)}{' ' * max(pad, 0)}  {c(CYAN)}│{c(NC)}")
+        print(f"  {c(CYAN)}╰{'─' * BOX_W}╯{c(NC)}")
         print()
 
     _render_threshold_note(result, use_color)
