@@ -445,14 +445,13 @@ _GREEN = "\033[0;32m"
 _GRAY  = "\033[0;37m"
 _BOLD  = "\033[1m"
 _NC    = "\033[0m"
-_STEP_W = 56  # fixed width for the label column
+_STEP_W = 52  # fixed width for the label column
 
 
-def _step(n: int, total: int, label: str) -> None:
-    prefix = f"  {_CYAN}[{n}/{total}]{_NC} {label}"
-    plain_len = 2 + len(f"[{n}/{total}]") + 1 + len(label)
+def _step(label: str) -> None:
+    plain_len = 2 + len(label)
     pad = max(1, _STEP_W - plain_len)
-    print(f"{prefix}{' ' * pad}", end="", flush=True)
+    print(f"  {label}{' ' * pad}", end="", flush=True)
 
 
 def _done(note: str = "") -> None:
@@ -471,19 +470,19 @@ def _compute_density(matched: list[KeywordMatch]) -> dict[str, int]:
 
 def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
     print()
-    _step(1, 4, "Parsing job description…")
+    _step("Parsing job description…")
     ontology = ont.load_ontology()
     jd_title = _extract_jd_title(jd_text)
     cleaned_jd = _strip_nontechnical_sections(jd_text)
     _done(f"title: {jd_title!r}" if jd_title else "")
 
-    _step(2, 4, "Extracting keywords via NLP…")
+    _step("Extracting keywords via NLP…")
     nlp = _load_spacy()
     doc = nlp(cleaned_jd)
     jd_keywords = _extract_jd_keywords(doc, ontology)
     _done(f"{len(jd_keywords)} keywords identified")
 
-    _step(3, 4, "Matching resume against keywords…")
+    _step("Matching resume against keywords…")
     section_texts = _build_section_texts(resume)
     skill_items = [item for sc in resume.skills for item in sc.items]
     all_skill_names = skill_items[:]
@@ -504,7 +503,7 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
             missing.append(kw)
     _done(f"{len(matched)} matched · {len(missing)} missing")
 
-    _step(4, 4, "Computing weighted scores…")
+    _step("Computing weighted scores…")
     keyword_score = (total_weighted / len(jd_keywords)) * 100.0 if jd_keywords else 0.0
     title_score = _title_score(jd_title, resume.positions)
     exp_score, years_detected = _experience_score(resume, jd_text)
@@ -555,20 +554,20 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
     from . import llm_analyzer
 
     print()
-    _step(1, 5, "Parsing job description…")
+    _step("Parsing job description…")
     ontology = ont.load_ontology()
     jd_title = _extract_jd_title(jd_text)
     _done(f"title: {jd_title!r}" if jd_title else "")
 
-    _step(2, 5, "Extracting keywords via LLM…")
+    _step("Extracting keywords via LLM…")
     jd_keywords = llm_analyzer.extract_jd_keywords(jd_text)
     _done(f"{len(jd_keywords)} keywords identified")
 
-    _step(3, 5, "Semantic resume matching via LLM…")
+    _step("Matching resume semantically…")
     analysis = llm_analyzer.analyze_resume_match(resume, jd_text, jd_keywords)
     _done(f"{len(analysis.matched)} matched · {len(analysis.missing)} missing")
 
-    _step(4, 5, "Generating bullet rewrites…")
+    _step("Generating bullet rewrites…")
     raw_rewrites = llm_analyzer.generate_bullet_rewrites(
         resume, analysis.missing, jd_text, max_rewrites=_MAX_REWRITES
     )
@@ -583,7 +582,7 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
     ]
     _done(f"{len(bullet_rewrites)} rewrite(s)")
 
-    _step(5, 5, "Computing weighted scores…")
+    _step("Computing weighted scores…")
     matched: list[KeywordMatch] = []
     total_weighted = 0.0
     for lm in analysis.matched:

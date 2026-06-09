@@ -27,7 +27,6 @@ _GROQ_MODEL       = _LC.get("groq_model",     "llama-3.3-70b-versatile")
 _TEMPERATURE      = _LC.get("temperature",    0.1)
 _MAX_TOKENS       = _LC.get("max_tokens",     4096)
 
-_GRAY  = "\033[0;37m"
 _CYAN  = "\033[0;36m"
 _NC    = "\033[0m"
 
@@ -74,14 +73,6 @@ def active_backend() -> str:
 
 # ── low-level chat helpers ─────────────────────────────────────────────────────
 
-def _print_usage(prompt: int, completion: int, backend: str, reasoning: int = 0) -> None:
-    total = prompt + completion
-    detail = f"  reasoning: {reasoning}" if reasoning else ""
-    print(
-        f"{_GRAY}    [{backend}] tokens → prompt: {prompt}  "
-        f"completion: {completion}{detail}  total: {total}{_NC}"
-    )
-
 
 def _chat_cerebras(system: str, user: str) -> dict:
     api_key = os.environ.get("CEREBRAS_API_KEY")
@@ -104,13 +95,6 @@ def _chat_cerebras(system: str, user: str) -> dict:
         if "429" in msg or "rate_limit" in msg.lower() or "rate limit" in msg.lower():
             raise RateLimitError("Cerebras rate limit hit") from None
         raise
-    usage = getattr(response, "usage", None)
-    if usage:
-        reasoning = 0
-        details = getattr(usage, "completion_tokens_details", None)
-        if details:
-            reasoning = getattr(details, "reasoning_tokens", 0) or 0
-        _print_usage(usage.prompt_tokens, usage.completion_tokens, "Cerebras", reasoning)
     raw = response.choices[0].message.content
     try:
         return json.loads(raw)
@@ -139,9 +123,6 @@ def _chat_groq(system: str, user: str) -> dict:
         if "429" in msg or "rate_limit" in msg.lower():
             raise RateLimitError("Groq rate limit hit") from None
         raise
-    usage = getattr(response, "usage", None)
-    if usage:
-        _print_usage(usage.prompt_tokens, usage.completion_tokens, "Groq")
     raw = response.choices[0].message.content
     try:
         return json.loads(raw)
@@ -161,7 +142,7 @@ def _chat(system: str, user: str) -> dict:
         except RateLimitError:
             if groq_ok:
                 print(
-                    f"{_CYAN}    ⚡ Cerebras rate limit hit — switching to Groq{_NC}",
+                    f"\n  {_CYAN}⚡ Cerebras rate limit — switching to Groq{_NC}",
                     file=sys.stderr, flush=True,
                 )
                 try:
