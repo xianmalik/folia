@@ -5,6 +5,7 @@ import os
 import sys
 
 from . import config as _cfg
+from . import box as _box
 
 # ANSI codes — matches build.py palette
 CYAN = "\033[0;36m"
@@ -71,9 +72,10 @@ def render(result, no_color: bool = False) -> None:
 def _render_health(result, use_color: bool) -> None:
     c = lambda code: _c(code, use_color)
     print()
-    print(f"{c(CYAN)}╭{'─' * 76}╮{c(NC)}")
-    print(f"{c(CYAN)}│{c(WHITE)}  folia · ATS Health Check{c(GRAY)}                                               {c(CYAN)}│{c(NC)}")
-    print(f"{c(CYAN)}╰{'─' * 76}╯{c(NC)}")
+    b = _box.Box(CYAN, c, indent="")
+    b.open()
+    b.row("folia · ATS Health Check", color=WHITE)
+    b.close()
     print()
 
     label_w = 22
@@ -137,20 +139,16 @@ def _chunk_text(text: str, width: int) -> list[str]:
 
 def _render_jd(result, use_color: bool) -> None:
     c = lambda code: _c(code, use_color)
-    BOX_W = 76
     author = getattr(result, "author_name", "")
     backend = getattr(result, "backend", "spacy")
     backend_label = "LLM" if backend == "llm" else "NLP"
-    title_text = f"  folia · ATS Score vs Job Description  [{backend_label}]"
-    title_pad = BOX_W - len(title_text)
     print()
-    print(f"{c(CYAN)}╭{'─' * BOX_W}╮{c(NC)}")
-    print(f"{c(CYAN)}│{c(WHITE)}{title_text}{' ' * max(title_pad, 0)}{c(CYAN)}│{c(NC)}")
+    b = _box.Box(CYAN, c, indent="")
+    b.open()
+    b.row(f"folia · ATS Score vs Job Description  [{backend_label}]", color=WHITE)
     if author:
-        author_text = f"  Author: {author}"
-        author_pad = BOX_W - len(author_text)
-        print(f"{c(CYAN)}│{c(GRAY)}{author_text}{' ' * max(author_pad, 0)}{c(CYAN)}│{c(NC)}")
-    print(f"{c(CYAN)}╰{'─' * BOX_W}╯{c(NC)}")
+        b.row(f"Author: {author}", color=GRAY)
+    b.close()
     print()
 
     if result.jd_title:
@@ -197,10 +195,8 @@ def _render_jd(result, use_color: bool) -> None:
             print(f"  {c(GRAY)}Education:{c(NC)} {c(YELLOW)}⚠ {resume_label}{cs_note} · JD prefers {g.jd_required.title()} (score gap: {g.jd_required_level - g.resume_level_score:.0f} pts){c(NC)}")
     print()
 
-    CONTENT_W = BOX_W - 4
-
     def _wrap(words: list[str], indent: int = 0) -> list[str]:
-        max_w = CONTENT_W - indent
+        max_w = _box.CONTENT_W - indent
         line: list[str] = []
         lines: list[str] = []
         for w in words:
@@ -212,54 +208,37 @@ def _render_jd(result, use_color: bool) -> None:
             lines.append(", ".join(line))
         return lines
 
-    def _kw_row(border_col: str, label: str, label_col: str, kw_line: str, first: bool) -> None:
-        prefix = f"{c(label_col)}{label}{c(NC)}" if first else " " * len(label)
-        content = f"{prefix}{kw_line}"
-        pad = CONTENT_W - len(label) - len(kw_line)
-        print(f"  {c(border_col)}│{c(NC)}  {content}{' ' * max(pad, 0)}  {c(border_col)}│{c(NC)}")
-
-    def _plain_row(border_col: str, kw_col: str, kw_line: str) -> None:
-        pad = CONTENT_W - len(kw_line)
-        print(f"  {c(border_col)}│{c(NC)}  {c(kw_col)}{kw_line}{c(NC)}{' ' * max(pad, 0)}  {c(border_col)}│{c(NC)}")
-
-    def _box_header(border_col: str, title: str) -> None:
-        title_pad = BOX_W - 2 - len(title)
-        print(f"  {c(border_col)}╭{'─' * BOX_W}╮{c(NC)}")
-        print(f"  {c(border_col)}│{c(BOLD)}{c(WHITE)}  {title}{' ' * title_pad}{c(NC)}{c(border_col)}│{c(NC)}")
-        print(f"  {c(border_col)}├{'─' * BOX_W}┤{c(NC)}")
-
     if result.matched_keywords:
-        direct = [m for m in result.matched_keywords if m.matched_via == "direct"]
+        direct   = [m for m in result.matched_keywords if m.matched_via == "direct"]
         ontology = [m for m in result.matched_keywords if m.matched_via == "ontology"]
-        fuzzy = [m for m in result.matched_keywords if m.matched_via == "fuzzy"]
-
-        _box_header(GREEN, "Matched Keywords")
+        fuzzy    = [m for m in result.matched_keywords if m.matched_via == "fuzzy"]
+        b = _box.Box(GREEN, c)
+        b.open("Matched Keywords")
+        kw_indent = "    "
         for group, label, col in [
-            (direct,   "✓ Direct", GREEN),
+            (direct,   "✓ Direct",   GREEN),
             (ontology, "~ Ontology", YELLOW),
-            (fuzzy,    "≈ Fuzzy", YELLOW),
+            (fuzzy,    "≈ Fuzzy",    YELLOW),
         ]:
             if not group:
                 continue
-            pad = CONTENT_W - len(label)
-            print(f"  {c(GREEN)}│{c(NC)}  {c(col)}{c(BOLD)}{label}{c(NC)}{' ' * max(pad, 0)}  {c(GREEN)}│{c(NC)}")
-            kw_indent = "    "
+            b.raw_row(f"{c(col)}{c(BOLD)}{label}{c(NC)}", len(label))
             for ln in _wrap([m.keyword for m in group], indent=len(kw_indent)):
-                pad = CONTENT_W - len(kw_indent) - len(ln)
-                print(f"  {c(GREEN)}│{c(NC)}  {kw_indent}{ln}{' ' * max(pad, 0)}  {c(GREEN)}│{c(NC)}")
-        print(f"  {c(GREEN)}╰{'─' * BOX_W}╯{c(NC)}")
+                b.row(kw_indent + ln)
+        b.close()
         print()
 
     if result.missing_keywords:
-        _box_header(RED, "Missing Keywords")
+        b = _box.Box(RED, c)
+        b.open("Missing Keywords")
         for ln in _wrap(result.missing_keywords):
-            _plain_row(RED, RED, ln)
-        print(f"  {c(RED)}╰{'─' * BOX_W}╯{c(NC)}")
+            b.row(ln, color=RED)
+        b.close()
         print()
 
-        print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")
+        _box.rule(GRAY, c)
         print(f"  {c(YELLOW)}💡  Suggestion:{c(NC)} add missing keywords naturally to your experience bullets.")
-        print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")
+        _box.rule(GRAY, c)
         print()
 
     if backend == "llm":
@@ -297,29 +276,25 @@ def _render_jd(result, use_color: bool) -> None:
         print()
 
     if backend == "llm" and bullet_rewrites:
-        _box_header(CYAN, "Bullet Rewrite Suggestions")
+        b = _box.Box(CYAN, c)
+        b.open("Bullet Rewrite Suggestions")
         for idx, rw in enumerate(bullet_rewrites):
             if idx > 0:
-                print(f"  {c(CYAN)}├{'─' * BOX_W}┤{c(NC)}")
-            kw_line = f"Keyword  {rw.keyword}"
-            kw_pad = CONTENT_W - len(kw_line)
-            print(f"  {c(CYAN)}│{c(NC)}  {c(YELLOW)}{c(BOLD)}{kw_line}{c(NC)}{' ' * max(kw_pad, 0)}  {c(CYAN)}│{c(NC)}")
+                b.sep()
+            kw_line   = f"Keyword  {rw.keyword}"
             role_line = f"Role     {rw.role}"
-            role_pad = CONTENT_W - len(role_line)
-            print(f"  {c(CYAN)}│{c(NC)}  {c(YELLOW)}{role_line}{c(NC)}{' ' * max(role_pad, 0)}  {c(CYAN)}│{c(NC)}")
-            # Before
+            b.raw_row(f"{c(YELLOW)}{c(BOLD)}{kw_line}{c(NC)}", len(kw_line))
+            b.raw_row(f"{c(YELLOW)}{role_line}{c(NC)}", len(role_line))
             before_label = "Before  "
-            for i, chunk in enumerate(_chunk_text(rw.original, CONTENT_W - len(before_label))):
-                lbl = before_label if i == 0 else " " * len(before_label)
-                pad = CONTENT_W - len(lbl) - len(chunk)
-                print(f"  {c(CYAN)}│{c(NC)}  {c(GRAY)}{lbl}{chunk}{c(NC)}{' ' * max(pad, 0)}  {c(CYAN)}│{c(NC)}")
-            # After
-            after_label = "After   "
-            for i, chunk in enumerate(_chunk_text(rw.rewritten, CONTENT_W - len(after_label))):
-                lbl = after_label if i == 0 else " " * len(after_label)
-                pad = CONTENT_W - len(lbl) - len(chunk)
-                print(f"  {c(CYAN)}│{c(NC)}  {c(GREEN)}{lbl}{chunk}{c(NC)}{' ' * max(pad, 0)}  {c(CYAN)}│{c(NC)}")
-        print(f"  {c(CYAN)}╰{'─' * BOX_W}╯{c(NC)}")
+            after_label  = "After   "
+            lbl_w = len(before_label)
+            for i, chunk in enumerate(_chunk_text(rw.original, _box.CONTENT_W - lbl_w)):
+                lbl = before_label if i == 0 else " " * lbl_w
+                b.raw_row(f"{c(GRAY)}{lbl}{chunk}{c(NC)}", lbl_w + len(chunk))
+            for i, chunk in enumerate(_chunk_text(rw.rewritten, _box.CONTENT_W - lbl_w)):
+                lbl = after_label if i == 0 else " " * lbl_w
+                b.raw_row(f"{c(GREEN)}{lbl}{chunk}{c(NC)}", lbl_w + len(chunk))
+        b.close()
         print()
 
     _render_threshold_note(result, use_color)

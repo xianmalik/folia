@@ -160,12 +160,15 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RateLimitError as e:
+        from ats.box import Box
         _RED  = "\033[0;31m"
         _BOLD = "\033[1m"
         _NC   = "\033[0m"
-        msg = f"✗  {e} — aborting check."
-        W = len(msg) + 2
-        print(f"\n  {_RED}╭{'─' * W}╮{_NC}", file=sys.stderr)
-        print(f"  {_RED}│ {_BOLD}{msg}{_NC}{_RED} │{_NC}", file=sys.stderr)
-        print(f"  {_RED}╰{'─' * W}╯{_NC}\n", file=sys.stderr)
+        c = lambda code: code  # color always on for error output
+        print(file=sys.stderr)
+        b = Box(color=_RED, c=c)
+        b.open()
+        b.raw_row(f"{_BOLD}✗  {e} — aborting check.{_NC}", len(f"✗  {e} — aborting check."))
+        b.close()
+        print(file=sys.stderr)
         sys.exit(1)
