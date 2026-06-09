@@ -151,6 +151,10 @@ def _render_jd(result, use_color: bool) -> None:
     b.close()
     print()
 
+    if getattr(result, "llm_fallback", False):
+        print(f"  {c(YELLOW)}⚠  LLM rate limit hit — results based on local NLP analysis (less accurate){c(NC)}")
+        print()
+
     if result.jd_title:
         print(f"  {c(GRAY)}Detected JD title:{c(NC)} {c(WHITE)}{result.jd_title}{c(NC)}")
         print()
@@ -241,41 +245,40 @@ def _render_jd(result, use_color: bool) -> None:
         _box.rule(GRAY, c)
         print()
 
-    if backend == "llm":
-        keyword_density = getattr(result, "keyword_density", {})
-        if keyword_density:
-            total_hits = sum(keyword_density.values())
-            _SECTION_ORDER = ["experience", "skills", "projects", "summary", "education"]
-            ordered = [(s, keyword_density[s]) for s in _SECTION_ORDER if s in keyword_density]
-            ordered += [(s, v) for s, v in keyword_density.items() if s not in _SECTION_ORDER]
-            print(f"  {c(BOLD)}{c(WHITE)}Keyword Density by Section:{c(NC)}")
-            label_w2 = 12
-            bar_w2 = 20
-            for section, hits in ordered:
-                frac = hits / total_hits if total_hits > 0 else 0.0
-                filled = round(frac * bar_w2)
-                bar2 = "█" * filled + "░" * (bar_w2 - filled)
-                col2 = _score_color(frac if frac >= 0.3 else frac + 0.1)
-                pct = f"{frac * 100:.0f}%"
-                print(f"  {section.capitalize().ljust(label_w2)}  {c(col2)}{bar2}{c(NC)}  {str(hits).rjust(2)} hits  {pct.rjust(4)}")
-            print()
+    keyword_density = getattr(result, "keyword_density", {})
+    if keyword_density:
+        total_hits = sum(keyword_density.values())
+        _SECTION_ORDER = ["experience", "skills", "projects", "summary", "education"]
+        ordered = [(s, keyword_density[s]) for s in _SECTION_ORDER if s in keyword_density]
+        ordered += [(s, v) for s, v in keyword_density.items() if s not in _SECTION_ORDER]
+        print(f"  {c(BOLD)}{c(WHITE)}Keyword Density by Section:{c(NC)}")
+        label_w2 = 12
+        bar_w2 = 20
+        for section, hits in ordered:
+            frac = hits / total_hits if total_hits > 0 else 0.0
+            filled = round(frac * bar_w2)
+            bar2 = "█" * filled + "░" * (bar_w2 - filled)
+            col2 = _score_color(frac if frac >= 0.3 else frac + 0.1)
+            pct = f"{frac * 100:.0f}%"
+            print(f"  {section.capitalize().ljust(label_w2)}  {c(col2)}{bar2}{c(NC)}  {str(hits).rjust(2)} hits  {pct.rjust(4)}")
+        print()
 
-        role_fit = getattr(result, "role_fit", "")
-        suggestions = getattr(result, "suggestions", [])
-        bullet_rewrites = getattr(result, "bullet_rewrites", [])
+    role_fit = getattr(result, "role_fit", "") if backend == "llm" else ""
+    suggestions = getattr(result, "suggestions", []) if backend == "llm" else []
+    bullet_rewrites = getattr(result, "bullet_rewrites", []) if backend == "llm" else []
 
-    if backend == "llm" and role_fit:
+    if role_fit:
         print(f"  {c(BOLD)}{c(WHITE)}Role Fit Assessment:{c(NC)}")
         print(f"  {c(GRAY)}{role_fit}{c(NC)}")
         print()
 
-    if backend == "llm" and suggestions:
+    if suggestions:
         print(f"  {c(BOLD)}{c(WHITE)}AI Suggestions:{c(NC)}")
         for idx, sug in enumerate(suggestions, 1):
             print(f"  {c(CYAN)}{idx}.{c(NC)} {sug}")
         print()
 
-    if backend == "llm" and bullet_rewrites:
+    if bullet_rewrites:
         b = _box.Box(CYAN, c)
         b.open("Bullet Rewrite Suggestions")
         for idx, rw in enumerate(bullet_rewrites):

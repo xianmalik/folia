@@ -112,6 +112,7 @@ class JDResult:
     suggestions: list[str] = field(default_factory=list)
     role_fit: str = ""
     backend: str = "spacy"  # "spacy" | "llm"
+    llm_fallback: bool = False  # True when LLM was attempted but rate-limited
     keyword_density: dict[str, int] = field(default_factory=dict)  # section → hit count
     bullet_rewrites: list[BulletRewrite] = field(default_factory=list)
 

@@ -139,6 +139,7 @@ def main() -> int:
                 file=sys.stderr, flush=True,
             )
             result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=False)
+            result.llm_fallback = True
     else:
         _step("Loading resume data…")
         resume = pdf_loader.load()
