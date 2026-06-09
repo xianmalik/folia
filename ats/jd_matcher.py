@@ -99,6 +99,9 @@ class JDResult:
     edu_gap: EduGap | None = None
     author_name: str = ""
     mode: str = "jd"
+    suggestions: list[str] = field(default_factory=list)
+    role_fit: str = ""
+    backend: str = "spacy"  # "spacy" | "groq"
 
 
 def _load_spacy():
@@ -409,9 +412,21 @@ def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[
     return min(100.0, highest + cs_bonus), None
 
 
-def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) -> JDResult:
+def run(
+    resume: ResumeData,
+    jd_text: str,
+    threshold: float = _PASS_THRESHOLD,
+    use_groq: bool = False,
+) -> JDResult:
     if not jd_text or not jd_text.strip():
         raise ValueError("jd_text must not be empty")
+
+    if use_groq:
+        return _run_groq(resume, jd_text, threshold)
+    return _run_spacy(resume, jd_text, threshold)
+
+
+def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
     nlp = _load_spacy()
     ontology = ont.load_ontology()
 
@@ -467,4 +482,75 @@ def run(resume: ResumeData, jd_text: str, threshold: float = _PASS_THRESHOLD) ->
         threshold=threshold,
         edu_gap=edu_gap,
         author_name=resume.contact.full_name,
+        backend="spacy",
+    )
+
+
+# Map Groq match types to the score values used by the spaCy path so the
+# weighted keyword score stays comparable across backends.
+_GROQ_SCORE_MAP = {
+    "direct": _KW_SCORE_DIRECT,
+    "semantic": _KW_SCORE_ONTOLOGY,
+    "implied": _KW_SCORE_FUZZY,
+}
+# Renderer reuses "matched_via" labels from the spaCy path.
+_GROQ_VIA_MAP = {
+    "direct": "direct",
+    "semantic": "ontology",
+    "implied": "fuzzy",
+}
+
+
+def _run_groq(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
+    from . import groq_analyzer
+
+    jd_title = _extract_jd_title(jd_text)
+    ontology = ont.load_ontology()
+
+    print("  [groq] Extracting JD keywords via Groq…", flush=True)
+    jd_keywords = groq_analyzer.extract_jd_keywords(jd_text)
+
+    print("  [groq] Semantic resume matching via Groq…", flush=True)
+    analysis = groq_analyzer.analyze_resume_match(resume, jd_text, jd_keywords)
+
+    matched: list[KeywordMatch] = []
+    total_weighted = 0.0
+    for gm in analysis.matched:
+        via = _GROQ_VIA_MAP.get(gm.match_type, "direct")
+        score = _GROQ_SCORE_MAP.get(gm.match_type, _KW_SCORE_DIRECT)
+        matched.append(KeywordMatch(keyword=gm.keyword, found_in=gm.found_in, matched_via=via, score=score))
+        total_weighted += score
+
+    all_kw_count = len(jd_keywords)
+    keyword_score = (total_weighted / all_kw_count) * 100.0 if all_kw_count else 0.0
+
+    title_score = _title_score(jd_title, resume.positions)
+    exp_score, years_detected = _experience_score(resume, jd_text)
+    edu_score, edu_gap = _education_score(resume, jd_text, ontology)
+
+    overall = (
+        keyword_score * _W_KEYWORD
+        + title_score * _W_TITLE
+        + exp_score * _W_EXP
+        + edu_score * _W_EDU
+    )
+
+    return JDResult(
+        overall_score=round(overall, 1),
+        keyword_score=round(keyword_score, 1),
+        title_score=round(title_score, 1),
+        exp_score=round(exp_score, 1),
+        edu_score=round(edu_score, 1),
+        matched_keywords=matched,
+        missing_keywords=analysis.missing,
+        jd_keyword_count=all_kw_count,
+        jd_title=jd_title,
+        years_detected=years_detected,
+        passed=overall >= threshold,
+        threshold=threshold,
+        edu_gap=edu_gap,
+        author_name=resume.contact.full_name,
+        suggestions=analysis.suggestions,
+        role_fit=analysis.role_fit,
+        backend="groq",
     )

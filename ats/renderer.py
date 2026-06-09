@@ -122,7 +122,9 @@ def _render_jd(result, use_color: bool) -> None:
     c = lambda code: _c(code, use_color)
     BOX_W = 76
     author = getattr(result, "author_name", "")
-    title_text = "  folia · ATS Score vs Job Description"
+    backend = getattr(result, "backend", "spacy")
+    backend_label = "Groq LLM" if backend == "groq" else "spaCy NLP"
+    title_text = f"  folia · ATS Score vs Job Description  [{backend_label}]"
     title_pad = BOX_W - len(title_text)
     print()
     print(f"{c(CYAN)}╭{'─' * BOX_W}╮{c(NC)}")
@@ -241,6 +243,20 @@ def _render_jd(result, use_color: bool) -> None:
         print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")
         print(f"  {c(YELLOW)}💡  Suggestion:{c(NC)} add missing keywords naturally to your experience bullets.")
         print(f"  {c(GRAY)}{'─' * (BOX_W + 2)}{c(NC)}")
+        print()
+
+    role_fit = getattr(result, "role_fit", "")
+    suggestions = getattr(result, "suggestions", [])
+
+    if role_fit:
+        print(f"  {c(BOLD)}{c(WHITE)}Role Fit Assessment (Groq):{c(NC)}")
+        print(f"  {c(GRAY)}{role_fit}{c(NC)}")
+        print()
+
+    if suggestions:
+        print(f"  {c(BOLD)}{c(WHITE)}AI Suggestions (Groq):{c(NC)}")
+        for idx, sug in enumerate(suggestions, 1):
+            print(f"  {c(CYAN)}{idx}.{c(NC)} {sug}")
         print()
 
     _render_threshold_note(result, use_color)

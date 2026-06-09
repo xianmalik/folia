@@ -40,3 +40,8 @@ renderer:
 date_parser:
   year_min: 1950                # earliest plausible year in a date range
   year_max: 2050                # latest plausible year in a date range
+
+groq:
+  model: llama-3.3-70b-versatile  # Groq model to use (see console.groq.com for options)
+  temperature: 0.1                # lower = more deterministic outputs
+  max_tokens: 4096                # max tokens per Groq response

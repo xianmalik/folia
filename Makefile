@@ -1,7 +1,12 @@
 # Makefile for xianmalik_cv
 # Targets: build (default), watch, open, clean, deps, venv
 
-.PHONY: build watch open clean deps venv lint format test release docker-build ats ats-jd ats-deps
+# Auto-load .env if it exists and export its variables to subprocesses.
+# Format: KEY=value (one per line, # for comments — no quotes, no 'export' prefix).
+-include .env
+export GROQ_API_KEY
+
+.PHONY: build watch open clean deps venv lint format test release docker-build ats ats-deps
 
 BUILD_SCRIPT := ./scripts/build.py
 PDF := dist/resume.pdf
@@ -55,17 +60,33 @@ docker-build:
 	@docker build -t folia .
 	@docker run --rm -v "$(PWD)/dist:/app/dist" folia
 
+# Install spaCy and its model — only needed when running without a Groq API key.
 ats-deps: deps
 	@$(PY) -c "import spacy; spacy.load('en_core_web_sm')" >/dev/null 2>&1 || \
-	 { printf "Installing prerequisites... "; \
+	 { printf "Installing spaCy prerequisites... "; \
 	   $(PIP) install -r requirements.txt >/dev/null 2>&1 && \
 	   $(PY) -m spacy download en_core_web_sm >/dev/null 2>&1 && \
 	   printf "✓\n"; }
 
+# ── Smart unified ATS target ────────────────────────────────────────────────
+#
+#   make ats              → CV health check
+#   make ats JD=jd.txt   → JD match  (JD or jd, either case works)
+#
+# Backend selection (automatic, no flags needed):
+#   GROQ_API_KEY set in .env  →  Groq LLM  (semantic, no extra installs)
+#   GROQ_API_KEY not set      →  spaCy NLP  (run `make ats-deps` first)
+#
+# Override flags still work directly via Python if needed:
+#   .venv/bin/python3 scripts/ats_check.py --jd jd.txt --no-groq
+# ────────────────────────────────────────────────────────────────────────────
+
+# Coalesce JD and jd into a single variable (whichever was passed).
+_JD := $(or $(JD),$(jd))
+
 ats: deps
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py
-
-ats-jd: ats-deps
-	@[ -n "$(JD)" ] || { echo "Usage: make ats-jd JD=path/to/jd.txt"; exit 1; }
-	-@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(JD)"
-
+	@if [ -n "$(_JD)" ]; then \
+		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(_JD)"; \
+	else \
+		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py; \
+	fi

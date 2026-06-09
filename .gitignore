@@ -335,6 +335,9 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Environment secrets
+.env
+
 # Build output
 dist/
 

@@ -4,13 +4,15 @@ ATS checker for folia resumes.
 
 Reads resume content directly from data/*.yml (no PDF extraction needed)
 and scores it either as a standalone CV health check or against a job description.
+If GROQ_API_KEY is set, Groq LLM is used automatically for JD matching.
 
 Usage:
   python3 scripts/ats_check.py                      # CV health check
-  python3 scripts/ats_check.py --jd jd.txt          # score against JD
+  python3 scripts/ats_check.py --jd jd.txt          # score against JD (Groq if key set, else spaCy)
   python3 scripts/ats_check.py --jd -               # JD from stdin
+  python3 scripts/ats_check.py --jd jd.txt --no-groq  # force spaCy even if key is set
   make ats                                           # via Makefile
-  make ats-jd JD=jd.txt                             # via Makefile
+  make ats JD=jd.txt                                # via Makefile with JD
 """
 from __future__ import annotations
 
@@ -30,11 +32,12 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 scripts/ats_check.py                      # CV health check\n"
-            "  python3 scripts/ats_check.py --jd jd.txt          # score against JD\n"
-            "  cat jd.txt | python3 scripts/ats_check.py --jd -  # JD from stdin\n"
-            "  make ats                                           # via Makefile\n"
-            "  make ats-jd JD=jd.txt                             # via Makefile"
+            "  python3 scripts/ats_check.py                              # CV health check\n"
+            "  python3 scripts/ats_check.py --jd jd.txt                 # JD match (auto Groq if key set)\n"
+            "  cat jd.txt | python3 scripts/ats_check.py --jd -         # JD from stdin\n"
+            "  python3 scripts/ats_check.py --jd jd.txt --no-groq       # force spaCy backend\n"
+            "  make ats                                                   # health check\n"
+            "  make ats JD=jd.txt                                        # JD match (auto Groq if key set)"
         ),
     )
     parser.add_argument(
@@ -42,6 +45,19 @@ def _parse_args() -> argparse.Namespace:
         metavar="FILE",
         default=None,
         help="path to job description text file, or '-' to read from stdin",
+    )
+    groq_group = parser.add_mutually_exclusive_group()
+    groq_group.add_argument(
+        "--groq",
+        action="store_true",
+        default=False,
+        help="force Groq LLM backend (requires GROQ_API_KEY)",
+    )
+    groq_group.add_argument(
+        "--no-groq",
+        action="store_true",
+        default=False,
+        help="force spaCy backend even if GROQ_API_KEY is set",
     )
     parser.add_argument(
         "--threshold",
@@ -56,6 +72,19 @@ def _parse_args() -> argparse.Namespace:
         help="disable ANSI colour output",
     )
     return parser.parse_args()
+
+
+def _resolve_groq(args) -> bool:
+    """Determine whether to use the Groq backend for JD matching.
+
+    Priority: --no-groq flag > --groq flag > auto-detect from GROQ_API_KEY.
+    """
+    if args.no_groq:
+        return False
+    if args.groq:
+        return True
+    from ats.groq_analyzer import is_available
+    return is_available()
 
 
 def main() -> int:
@@ -78,7 +107,8 @@ def main() -> int:
             print("ats_check: JD text is empty", file=sys.stderr)
             return 1
 
-        result = jd_matcher.run(resume, jd_text, threshold=args.threshold)
+        use_groq = _resolve_groq(args)
+        result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_groq=use_groq)
     else:
         result = health.run(resume, threshold=args.threshold)
 
