@@ -581,7 +581,7 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         )
         for r in raw_rewrites
     ]
-    _done(f"{len(bullet_rewrites)} rewrite(s) generated")
+    _done(f"{len(bullet_rewrites)} rewrite(s)")
 
     _step(5, 5, "Computing weighted scores…")
     matched: list[KeywordMatch] = []

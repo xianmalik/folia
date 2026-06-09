@@ -51,17 +51,26 @@ def _get_client() -> "_GroqClient":
     return _GroqClient(api_key=api_key)
 
 
+class RateLimitError(RuntimeError):
+    """Raised when the LLM API daily token quota is exhausted."""
+
+
 def _chat(client: "_GroqClient", system: str, user: str, model: str) -> dict:
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        response_format={"type": "json_object"},
-        temperature=_TEMPERATURE,
-        max_tokens=_MAX_TOKENS,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={"type": "json_object"},
+            temperature=_TEMPERATURE,
+            max_tokens=_MAX_TOKENS,
+        )
+    except Exception as exc:
+        if "429" in str(exc) or "rate_limit" in str(exc).lower():
+            raise RateLimitError("LLM API rate limit hit — try again later") from None
+        raise
     raw = response.choices[0].message.content
     try:
         return json.loads(raw)

@@ -300,9 +300,12 @@ def _render_jd(result, use_color: bool) -> None:
         for idx, rw in enumerate(bullet_rewrites):
             if idx > 0:
                 print(f"  {c(CYAN)}├{'─' * BOX_W}┤{c(NC)}")
-            kw_line = f"Keyword: {rw.keyword}  ·  {rw.role}"
+            kw_line = f"Keyword  {rw.keyword}"
             kw_pad = CONTENT_W - len(kw_line)
             print(f"  {c(CYAN)}│{c(NC)}  {c(YELLOW)}{c(BOLD)}{kw_line}{c(NC)}{' ' * max(kw_pad, 0)}  {c(CYAN)}│{c(NC)}")
+            role_line = f"Role     {rw.role}"
+            role_pad = CONTENT_W - len(role_line)
+            print(f"  {c(CYAN)}│{c(NC)}  {c(YELLOW)}{role_line}{c(NC)}{' ' * max(role_pad, 0)}  {c(CYAN)}│{c(NC)}")
             # Before
             before_label = "Before  "
             for i, chunk in enumerate(_chunk_text(rw.original, CONTENT_W - len(before_label))):

@@ -22,7 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ats import loader, health, renderer  # noqa: E402
+from ats import pdf_loader, health, renderer  # noqa: E402
+from ats.llm_analyzer import RateLimitError  # noqa: E402
 
 _CYAN  = "\033[0;36m"
 _GREEN = "\033[0;32m"
@@ -106,11 +107,13 @@ def _done(note: str = "") -> None:
 def main() -> int:
     args = _parse_args()
 
+    pdf_loader.ensure_pdf()
+
     if args.jd is not None:
         from ats import jd_matcher
 
         _step(1, 1, "Loading resume data…")
-        resume = loader.load()
+        resume = pdf_loader.load()
         _done()
 
         if args.jd == "-":
@@ -130,7 +133,7 @@ def main() -> int:
         result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=use_llm)
     else:
         _step(1, 3, "Loading resume data…")
-        resume = loader.load()
+        resume = pdf_loader.load()
         _done()
 
         _step(2, 3, "Running ATS health checks…")
@@ -146,4 +149,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except RateLimitError as e:
+        _RED  = "\033[0;31m"
+        _BOLD = "\033[1m"
+        _NC   = "\033[0m"
+        W = 76
+        print(f"\n  {_RED}╭{'─' * W}╮{_NC}", file=sys.stderr)
+        msg = f"✗  {e} — aborting check."
+        pad = W - 2 - len(msg)
+        print(f"  {_RED}│ {_BOLD}{msg}{_NC}{_RED}{' ' * max(pad, 0)} │{_NC}", file=sys.stderr)
+        print(f"  {_RED}╰{'─' * W}╯{_NC}\n", file=sys.stderr)
+        sys.exit(1)
