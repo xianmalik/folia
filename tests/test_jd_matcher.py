@@ -126,3 +126,35 @@ def test_experience_meets_explicit_requirement(sample_resume):
 def test_experience_far_below_requirement(sample_resume):
     score, _ = jm._experience_score(sample_resume, "20 years of experience required")
     assert score < 100.0
+
+
+# ── full pipeline ────────────────────────────────────────────────────────────
+
+def test_run_is_pure_and_silent(sample_resume, capsys):
+    """run() must not print — progress goes through the callback only."""
+    import pytest
+
+    spacy = pytest.importorskip("spacy")
+    try:
+        spacy.load("en_core_web_sm")
+    except OSError:
+        pytest.skip("spaCy model en_core_web_sm not installed")
+
+    jd = (
+        "Senior Software Engineer\n\n"
+        "Requirements\n"
+        "5+ years of experience with TypeScript, React, and Node.js.\n"
+        "Bachelor degree in Computer Science required.\n"
+    )
+    result = jm.run(sample_resume, jd, use_llm=False)
+    assert capsys.readouterr().out == ""
+    assert 0 <= result.overall_score <= 100
+    assert result.backend == "spacy"
+    assert result.author_email == "ada@example.com"
+
+
+def test_run_rejects_empty_jd(sample_resume):
+    import pytest
+
+    with pytest.raises(ValueError):
+        jm.run(sample_resume, "   ")

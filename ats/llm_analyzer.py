@@ -21,8 +21,10 @@ _GROQ_FALLBACK_MODEL = _LC.get("groq_fallback_model", "meta-llama/llama-4-scout-
 _TEMPERATURE         = _LC.get("temperature",         0.1)
 _MAX_TOKENS          = _LC.get("max_tokens",          4096)
 
-_CYAN  = "\033[0;36m"
-_NC    = "\033[0m"
+# Optional hook called as on_model_fallback(primary_model, fallback_model)
+# when the primary model is rate-limited. Set by the CLI to surface the
+# switch to the user; this module itself never prints.
+on_model_fallback = None
 
 
 # ── public exceptions ──────────────────────────────────────────────────────────
@@ -88,7 +90,6 @@ def _chat_groq(system: str, user: str, model: str) -> dict:
 
 def _chat(system: str, user: str) -> dict:
     """Try the primary Groq model, fall back to the secondary model on rate limit."""
-    import sys
     if not (_HAS_GROQ and os.environ.get("GROQ_API_KEY")):
         raise RuntimeError(
             "No LLM backend available — set GROQ_API_KEY in .env"
@@ -97,11 +98,8 @@ def _chat(system: str, user: str) -> dict:
     try:
         return _chat_groq(system, user, _GROQ_MODEL)
     except RateLimitError:
-        print(
-            f"\n  {_CYAN}⚡ Groq rate limit on {_GROQ_MODEL} — "
-            f"switching to {_GROQ_FALLBACK_MODEL}{_NC}",
-            file=sys.stderr, flush=True,
-        )
+        if on_model_fallback is not None:
+            on_model_fallback(_GROQ_MODEL, _GROQ_FALLBACK_MODEL)
         try:
             return _chat_groq(system, user, _GROQ_FALLBACK_MODEL)
         except RateLimitError:

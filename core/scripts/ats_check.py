@@ -23,8 +23,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ats import pdf_loader, health, renderer, term  # noqa: E402
+from ats import llm_analyzer, pdf_loader, health, renderer, term  # noqa: E402
 from ats.llm_analyzer import RateLimitError  # noqa: E402
+
+
+def _notify_model_fallback(primary: str, fallback: str) -> None:
+    print(
+        f"\n  {term.CYAN}⚡ Groq rate limit on {primary} — switching to {fallback}{term.NC}",
+        file=sys.stderr, flush=True,
+    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -118,15 +125,22 @@ def main() -> int:
             return 1
 
         use_llm = _resolve_llm(args)
+        llm_analyzer.on_model_fallback = _notify_model_fallback
+        print()
         try:
-            result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=use_llm)
+            result = jd_matcher.run(
+                resume, jd_text, threshold=args.threshold, use_llm=use_llm, progress=term
+            )
         except RateLimitError:
             print(
                 f"\n  {term.CYAN}⚡ LLM rate limit hit — falling back to local NLP check{term.NC}\n",
                 file=sys.stderr, flush=True,
             )
-            result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=False)
+            result = jd_matcher.run(
+                resume, jd_text, threshold=args.threshold, use_llm=False, progress=term
+            )
             result.llm_fallback = True
+        print()
     else:
         term.step("Loading resume data…")
         resume = pdf_loader.load()
