@@ -67,7 +67,7 @@ docker-build:
 ats-deps: deps
 	@$(PY) -c "import spacy; spacy.load('en_core_web_sm')" >/dev/null 2>&1 || \
 	 { printf "Installing spaCy prerequisites... "; \
-	   $(PIP) install -r requirements.txt >/dev/null 2>&1 && \
+	   $(PIP) install -r requirements-ats.txt >/dev/null 2>&1 && \
 	   $(PY) -m spacy download en_core_web_sm >/dev/null 2>&1 && \
 	   printf "✓\n"; }
 
@@ -88,6 +88,7 @@ ats-deps: deps
 _JD := $(or $(JD),$(jd))
 
 ats: deps
+	@$(PY) -c "import pypdf" >/dev/null 2>&1 || $(PIP) install -q -r requirements-ats.txt
 	@if [ -n "$(_JD)" ]; then \
 		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/ats_check.py --jd "$(_JD)"; \
 	else \

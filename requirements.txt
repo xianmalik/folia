@@ -1,6 +1,3 @@
+# Core build dependencies (YAML → TeX → PDF). ATS deps live in requirements-ats.txt.
 PyYAML>=6.0
 watchdog>=4.0
-spacy>=3.7
-rapidfuzz>=3.0
-groq>=0.9
-pypdf>=3.0

@@ -9,6 +9,7 @@ _RC = _cfg.get()["renderer"]
 _THRESH_PASS = _RC["thresh_pass"]
 _THRESH_GOOD = _RC["thresh_good"]
 _THRESH_WARN = _RC["thresh_warn"]
+_JD_WEIGHTS = _cfg.get()["jd_match"]["weights"]
 
 
 def _c(code: str, use_color: bool) -> str:
@@ -155,10 +156,10 @@ def _render_jd(result, use_color: bool) -> None:
 
     label_w = 22
     components = [
-        ("Keyword Match", result.keyword_score, "40%"),
-        ("Title Match", result.title_score, "25%"),
-        ("Experience", result.exp_score, "20%"),
-        ("Education", result.edu_score, "15%"),
+        ("Keyword Match", result.keyword_score, f"{_JD_WEIGHTS['keyword']:.0%}"),
+        ("Title Match", result.title_score, f"{_JD_WEIGHTS['title']:.0%}"),
+        ("Experience", result.exp_score, f"{_JD_WEIGHTS['experience']:.0%}"),
+        ("Education", result.edu_score, f"{_JD_WEIGHTS['education']:.0%}"),
     ]
     for label, score, weight in components:
         bar = _bar(score, 100.0)

@@ -343,3 +343,4 @@ dist/
 
 # Job Description Files
 jd/
+*.egg-info/

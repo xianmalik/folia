@@ -1,0 +1,7 @@
+# ATS checker dependencies (installed on first `make ats` / `make ats-deps`).
+# spaCy is only exercised when running without GROQ_API_KEY (local NLP mode);
+# `make ats-deps` additionally downloads the en_core_web_sm model.
+pypdf>=3.0
+rapidfuzz>=3.0
+groq>=0.9
+spacy>=3.7
