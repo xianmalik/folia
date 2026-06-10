@@ -22,8 +22,6 @@ WHITE = "\033[1;37m"
 GRAY = "\033[0;37m"
 NC = "\033[0m"  # No Color
 BOLD = "\033[1m"
-# 256-color orange (falls back gracefully if unsupported)
-ORANGE = "\033[38;5;208m"
 
 
 # Directory layout (location-independent — anchored at the repo root)
@@ -42,18 +40,34 @@ def read_version() -> str:
     return "0.0.0"
 
 
+_BANNER_W = 69  # visible characters between the │ borders
+
+
+def _banner_row(*segments: tuple[str, str]) -> None:
+    """Print one banner row; *segments* are (color, text) pairs.
+
+    Padding is computed from the visible text so rows stay aligned no
+    matter how long the version string is.
+    """
+    visible = "".join(text for _, text in segments)
+    rendered = "".join(f"{color}{text}" for color, text in segments)
+    pad = max(_BANNER_W - len(visible), 0)
+    print(f"{CYAN}│{rendered}{' ' * pad}{CYAN}│{NC}")
+
+
 def print_banner(version: str) -> None:
-    print(f"{CYAN}╭─────────────────────────────────────────────────────────────────────╮{NC}")
-    print(f"{CYAN}│{WHITE} XeLaTeX CV Builder                                                  {CYAN}│{NC}")
-    print(f"{CYAN}│                                                                     │{NC}")
-    print(f"{CYAN}│{YELLOW} Version: {GREEN}v{version}{WHITE}                                                     {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Compiling: {GREEN}resume.tex{WHITE} → {GREEN}dist/resume-v{version}.pdf{WHITE}                      {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Engine: {BLUE}XeLaTeX{WHITE}                                                     {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Postbuild: {GRAY}Auto cleanup of auxiliary files after successful build   {CYAN}│{NC}")
-    print(f"{CYAN}│                                                                     │{NC}")
-    print(f"{CYAN}│{YELLOW} Usage: {GREEN}./core/scripts/build.py{WHITE}                                      {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Author: {PURPLE}@xianmalik{WHITE}                                                  {CYAN}│{NC}")
-    print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────╯{NC}")
+    print(f"{CYAN}╭{'─' * _BANNER_W}╮{NC}")
+    _banner_row((WHITE, " XeLaTeX CV Builder"))
+    _banner_row((NC, ""))
+    _banner_row((YELLOW, " Version: "), (GREEN, f"v{version}"))
+    _banner_row((YELLOW, " Compiling: "), (GREEN, "resume.tex"), (WHITE, " → "),
+                (GREEN, f"dist/resume-v{version}.pdf"))
+    _banner_row((YELLOW, " Engine: "), (BLUE, "XeLaTeX"))
+    _banner_row((YELLOW, " Postbuild: "), (GRAY, "Auto cleanup of auxiliary files after successful build"))
+    _banner_row((NC, ""))
+    _banner_row((YELLOW, " Usage: "), (GREEN, "./core/scripts/build.py"))
+    _banner_row((YELLOW, " Author: "), (PURPLE, "@xianmalik"))
+    print(f"{CYAN}╰{'─' * _BANNER_W}╯{NC}")
     print("")
 
 
@@ -94,7 +108,7 @@ def generate_from_yaml_if_possible() -> None:
         sys.exit(1)
 
 
-def run_step_with_spinner(title: str, work_fn, color: str = GREEN) -> any:
+def run_step_with_spinner(title: str, work_fn, color: str = GREEN):
     """Run a step showing a spinner (yellow) and finalize with a green checkmark.
 
     The provided work_fn is executed in a background thread; its return value
@@ -146,15 +160,14 @@ def main() -> int:
         generate_from_yaml_if_possible()
     run_step_with_spinner("Generating TeX from YAML...", _maybe_generate, color=GREEN)
 
-    # Step 2: Starting XeLaTeX
-    def _start_xelatex() -> subprocess.Popen:
-        # Start and immediately return; the next step will wait.
+    # Step 2: Compile with XeLaTeX.
+    def _compile() -> int:
         # Run from core/ so resume.tex's relative \input{sections/…},
         # \fontdir[font/], and the class partials all resolve, while the
         # output (PDF + aux) is written to the repo-level dist/ directory.
         log_path_local = DIST_DIR / "resume.log"
         with open(log_path_local, "w") as log_file_local:
-            proc = subprocess.Popen(
+            return subprocess.run(
                 [
                     "xelatex",
                     "-interaction=nonstopmode",
@@ -164,17 +177,9 @@ def main() -> int:
                 cwd=str(CORE_DIR),
                 stdout=log_file_local,
                 stderr=subprocess.STDOUT,
-            )
-        return proc
+            ).returncode
 
-    process = run_step_with_spinner("Starting XeLaTeX...", _start_xelatex, color=GREEN)
-
-    # Step 3: Compiling...
-    def _wait_compile() -> int:
-        return process.wait() or 0
-
-    run_step_with_spinner("Compiling...", _wait_compile, color=GREEN)
-    exit_code = process.returncode or 0
+    exit_code = run_step_with_spinner("Compiling with XeLaTeX...", _compile, color=GREEN)
     pdf_path = str(DIST_DIR / "resume.pdf")
     versioned_pdf_path = str(DIST_DIR / f"resume-v{version}.pdf")
 
