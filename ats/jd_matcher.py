@@ -195,24 +195,70 @@ def _collect_tokens(doc, known_tech: dict, add) -> None:
                 add(token.text)
 
 
+_PRONOUNS = {"you", "your", "yours", "our", "ours", "we", "us", "my", "their", "everyone", "someone"}
+_LEADING_ARTICLES = {"a", "an", "the", "this", "that", "these", "those"}
+_TIME_RE = re.compile(r"\b\d{1,2}\s*(?:am|pm)\b")
+
+
+def _strip_leading_article(text: str) -> str:
+    words = text.split()
+    if len(words) > 1 and words[0].lower() in _LEADING_ARTICLES:
+        return " ".join(words[1:])
+    return text
+
+
+def _looks_like_noise(norm: str) -> bool:
+    """Reject non-skill phrases: pronoun talk, clock times, generic terms."""
+    if not norm or len(norm) <= 2 or norm in _GENERIC_TERMS:
+        return True
+    words = norm.split()
+    if any(w in _PRONOUNS for w in words):
+        return True
+    if _TIME_RE.search(norm):
+        return True
+    words_stripped = [w.rstrip("s") for w in words]
+    if len(words) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_stripped):
+        return True
+    return False
+
+
+def _company_norms(doc, known_tech: dict) -> set[str]:
+    """Normalized employer-name terms from the JD's opening lines.
+
+    The hiring company's name is not a skill — drop it and its words from
+    keyword extraction, unless the word is itself a known technology.
+    """
+    head = "\n".join(doc.text.split("\n")[:6]).lower()
+    norms: set[str] = set()
+    for ent in doc.ents:
+        if ent.label_ != "ORG" or ent.text.lower() not in head:
+            continue
+        n = ont.normalize(ent.text)
+        if not n or n in known_tech:
+            continue
+        norms.add(n)
+        norms.update(w for w in n.split() if len(w) > 2 and w not in known_tech)
+    return norms
+
+
 def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
     """Extract technical keywords from a spaCy-processed JD document."""
     implies_keys = set(ontology.get("implies", {}).keys())
     alias_vals = set(ontology.get("aliases", {}).values())
     known_tech: dict[str, str] = {ont.normalize(k): k for k in implies_keys | alias_vals}
+    company = _company_norms(doc, known_tech)
 
     seen_norms: set[str] = set()
     keywords: list[str] = []
 
     def _add(text: str) -> None:
-        text = " ".join(text.split())  # collapse whitespace incl. newlines
+        text = _strip_leading_article(" ".join(text.split()))
         if not text:
             return
         n = ont.normalize(text)
-        if n in seen_norms or len(n) <= 2 or n in _GENERIC_TERMS:
+        if n in seen_norms or _looks_like_noise(n):
             return
-        words_lower = [w.lower().rstrip("s") for w in n.split()]
-        if len(words_lower) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_lower):
+        if n in company or any(w in company for w in n.split()):
             return
         seen_norms.add(n)
         keywords.append(text)

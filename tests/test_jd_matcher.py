@@ -89,6 +89,29 @@ def test_fuzzy_match_against_skill_items():
         assert score == jm._KW_SCORE_FUZZY
 
 
+# ── noise filtering ──────────────────────────────────────────────────────────
+
+def test_noise_rejects_pronoun_phrases():
+    for phrase in ("you", "our mission", "your body", "we ship daily"):
+        assert jm._looks_like_noise(ont.normalize(phrase))
+
+
+def test_noise_rejects_clock_times():
+    assert jm._looks_like_noise(ont.normalize("1 PM"))
+    assert jm._looks_like_noise(ont.normalize("10 pm bd time"))
+
+
+def test_noise_keeps_real_tech_terms():
+    for phrase in ("kubernetes", "react native", "event driven architecture", "php"):
+        assert not jm._looks_like_noise(ont.normalize(phrase))
+
+
+def test_leading_articles_stripped():
+    assert jm._strip_leading_article("a Good Engineer") == "Good Engineer"
+    assert jm._strip_leading_article("the platform") == "platform"
+    assert jm._strip_leading_article("Angular") == "Angular"  # single word untouched
+
+
 # ── keyword importance ───────────────────────────────────────────────────────
 
 def test_required_keywords_weigh_more():

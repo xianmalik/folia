@@ -83,3 +83,38 @@ def test_health_scores_within_bounds(sample_resume):
     result = health.run(sample_resume)
     for chk in result.checks:
         assert 0 <= chk.score <= chk.max_score
+
+
+def test_grade_boundaries():
+    assert renderer._grade(95.0)[0] == "A+"
+    assert renderer._grade(82.0)[0] == "A"
+    assert renderer._grade(72.2)[0] == "B+"
+    assert renderer._grade(55.0)[0] == "C"
+    assert renderer._grade(10.0)[0] == "F"
+
+
+def test_render_jd_shows_grade_and_contributions(capsys):
+    renderer.render(_jd_result(), no_color=True)
+    out = capsys.readouterr().out
+    assert "[B+]" in out          # 72.5 overall
+    assert "× 40%" in out         # keyword weight contribution
+    assert "pts" in out
+
+
+def test_missing_keywords_grouped_by_importance(capsys):
+    result = _jd_result(
+        missing_keywords=["Kubernetes", "Terraform"],
+        keyword_weights={"Kubernetes": 1.56, "Terraform": 0.6},
+    )
+    renderer.render(result, no_color=True)
+    out = capsys.readouterr().out
+    assert "Critical (1)" in out
+    assert "Other (1)" in out
+
+
+def test_top_fixes_rendered_for_weak_keyword_score(capsys):
+    result = _jd_result(keyword_score=35.0, missing_keywords=["Kubernetes", "Terraform"])
+    renderer.render(result, no_color=True)
+    out = capsys.readouterr().out
+    assert "Top Fixes" in out
+    assert "Kubernetes" in out

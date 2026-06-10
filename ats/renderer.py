@@ -50,6 +50,18 @@ def _finding_icon(text: str, ratio: float, use_color: bool) -> str:
     return f"  {_c(RED, use_color)}✗{_c(NC, use_color)}  {text}"
 
 
+_GRADES = [(90, "A+"), (80, "A"), (70, "B+"), (60, "B"), (50, "C"), (40, "D"), (0, "F")]
+_MISSING_REST_CAP = 18   # non-critical missing keywords shown before "+N more"
+_CRITICAL_WEIGHT = 1.2   # importance at or above which a missing keyword is critical
+
+
+def _grade(score: float) -> tuple[str, str]:
+    """Letter grade and its color for a 0-100 score."""
+    letter = next(g for cutoff, g in _GRADES if score >= cutoff)
+    color = GREEN if score >= 70 else YELLOW if score >= 50 else RED
+    return letter, color
+
+
 def render(result, no_color: bool = False) -> None:
     use_color = not no_color and _is_tty()
     if result.mode == "health":
@@ -82,12 +94,16 @@ def _render_health(result, use_color: bool) -> None:
     overall_ratio = result.total_score / 100.0
     col = _score_color(overall_ratio)
     overall_bar = _bar(result.total_score, 100.0)
+    letter, grade_col = _grade(result.total_score)
     verdict = (
         f"{c(GREEN)}{c(BOLD)} ✓ PASS{c(NC)}"
         if result.passed
         else f"{c(RED)}{c(BOLD)} ✗ FAIL{c(NC)}"
     )
-    print(f"  {'Overall CV Score'.ljust(label_w)}  {c(col)}{overall_bar}{c(NC)}  {str(result.total_score).rjust(3)}/100{verdict}")
+    print(
+        f"  {'Overall CV Score'.ljust(label_w)}  {c(col)}{overall_bar}{c(NC)}"
+        f"  {str(result.total_score).rjust(3)}/100  {c(grade_col)}{c(BOLD)}[{letter}]{c(NC)}{verdict}"
+    )
     print()
 
     printed_header = False
@@ -156,27 +172,35 @@ def _render_jd(result, use_color: bool) -> None:
 
     label_w = 22
     components = [
-        ("Keyword Match", result.keyword_score, f"{_JD_WEIGHTS['keyword']:.0%}"),
-        ("Title Match", result.title_score, f"{_JD_WEIGHTS['title']:.0%}"),
-        ("Experience", result.exp_score, f"{_JD_WEIGHTS['experience']:.0%}"),
-        ("Education", result.edu_score, f"{_JD_WEIGHTS['education']:.0%}"),
+        ("Keyword Match", result.keyword_score, _JD_WEIGHTS["keyword"]),
+        ("Title Match", result.title_score, _JD_WEIGHTS["title"]),
+        ("Experience", result.exp_score, _JD_WEIGHTS["experience"]),
+        ("Education", result.edu_score, _JD_WEIGHTS["education"]),
     ]
     for label, score, weight in components:
         bar = _bar(score, 100.0)
         col = _score_color(score / 100.0)
         icon = _status_icon(score / 100.0, use_color)
-        print(f"  {label.ljust(label_w)}  {c(col)}{bar}{c(NC)}  {str(score).rjust(3)}/100  {c(GRAY)}({weight}){c(NC)}  {icon}")
+        pts = f"{score * weight:5.1f} pts"
+        print(
+            f"  {label.ljust(label_w)}  {c(col)}{bar}{c(NC)}  {str(score).rjust(5)}/100"
+            f"  {c(GRAY)}× {weight:.0%} = {pts}{c(NC)}  {icon}"
+        )
 
     print()
     print(f"  {c(GRAY)}{'─' * 74}{c(NC)}")
     overall_col = _score_color(result.overall_score / 100.0)
     overall_bar = _bar(result.overall_score, 100.0)
+    letter, grade_col = _grade(result.overall_score)
     verdict = (
         f"{c(GREEN)}{c(BOLD)} ✓ PASS{c(NC)}"
         if result.passed
         else f"{c(RED)}{c(BOLD)} ✗ FAIL{c(NC)}"
     )
-    print(f"  {'Overall ATS Score'.ljust(label_w)}  {c(overall_col)}{overall_bar}{c(NC)}  {str(result.overall_score).rjust(3)}/100{verdict}")
+    print(
+        f"  {'Overall ATS Score'.ljust(label_w)}  {c(overall_col)}{overall_bar}{c(NC)}"
+        f"  {str(result.overall_score).rjust(5)}/100  {c(grade_col)}{c(BOLD)}[{letter}]{c(NC)}{verdict}"
+    )
     print()
 
     print(f"  {c(GRAY)}Experience detected:{c(NC)} {c(WHITE)}{result.years_detected:.1f} years{c(NC)}")
@@ -208,37 +232,59 @@ def _render_jd(result, use_color: bool) -> None:
         return lines
 
     if result.matched_keywords:
-        direct   = [m for m in result.matched_keywords if m.matched_via == "direct"]
-        ontology = [m for m in result.matched_keywords if m.matched_via == "ontology"]
-        fuzzy    = [m for m in result.matched_keywords if m.matched_via == "fuzzy"]
+        groups = [
+            ("direct",   "✓ Direct",   GREEN,  "exact mention"),
+            ("ontology", "~ Ontology", YELLOW, "implied by your stack"),
+            ("compound", "+ Compound", YELLOW, "all parts covered"),
+            ("fuzzy",    "≈ Fuzzy",    YELLOW, "near string match"),
+        ]
         b = _box.Box(GREEN, c)
         b.open("Matched Keywords")
         kw_indent = "    "
-        for group, label, col in [
-            (direct,   "✓ Direct",   GREEN),
-            (ontology, "~ Ontology", YELLOW),
-            (fuzzy,    "≈ Fuzzy",    YELLOW),
-        ]:
+        for via, label, col, note in groups:
+            group = [m for m in result.matched_keywords if m.matched_via == via]
             if not group:
                 continue
-            b.raw_row(f"{c(col)}{c(BOLD)}{label}{c(NC)}", len(label))
+            header = f"{label} ({len(group)})"
+            note_str = f"  · {note}"
+            b.raw_row(
+                f"{c(col)}{c(BOLD)}{header}{c(NC)}{c(GRAY)}{note_str}{c(NC)}",
+                len(header) + len(note_str),
+            )
             for ln in _wrap([m.keyword for m in group], indent=len(kw_indent)):
                 b.row(kw_indent + ln)
         b.close()
         print()
 
     if result.missing_keywords:
+        weights = result.keyword_weights
+        critical = [k for k in result.missing_keywords if weights.get(k, 1.0) >= _CRITICAL_WEIGHT]
+        rest     = [k for k in result.missing_keywords if weights.get(k, 1.0) < _CRITICAL_WEIGHT]
+
         b = _box.Box(RED, c)
         b.open("Missing Keywords")
-        for ln in _wrap(result.missing_keywords):
-            b.row(ln, color=RED)
+        kw_indent = "    "
+        if critical:
+            header = f"! Critical ({len(critical)})"
+            note_str = "  · required or mentioned repeatedly in the JD"
+            b.raw_row(
+                f"{c(RED)}{c(BOLD)}{header}{c(NC)}{c(GRAY)}{note_str}{c(NC)}",
+                len(header) + len(note_str),
+            )
+            for ln in _wrap(critical, indent=len(kw_indent)):
+                b.row(kw_indent + ln, color=RED)
+        shown_rest = rest[:_MISSING_REST_CAP]
+        if shown_rest:
+            header = f"· Other ({len(rest)})"
+            b.raw_row(f"{c(GRAY)}{c(BOLD)}{header}{c(NC)}", len(header))
+            for ln in _wrap(shown_rest, indent=len(kw_indent)):
+                b.row(kw_indent + ln, color=GRAY)
+            if len(rest) > _MISSING_REST_CAP:
+                b.row(f"{kw_indent}… +{len(rest) - _MISSING_REST_CAP} more", color=GRAY)
         b.close()
         print()
 
-        _box.rule(GRAY, c)
-        print(f"  {c(YELLOW)}💡  Suggestion:{c(NC)} add missing keywords naturally to your experience bullets.")
-        _box.rule(GRAY, c)
-        print()
+    _render_top_fixes(result, use_color)
 
     keyword_density = result.keyword_density
     if keyword_density:
@@ -297,6 +343,68 @@ def _render_jd(result, use_color: bool) -> None:
         print()
 
     _render_threshold_note(result, use_color)
+    print()
+
+
+def _top_fixes(result) -> list[str]:
+    """Up to four concrete actions, ordered by likely score impact."""
+    fixes: list[str] = []
+    weights = result.keyword_weights
+
+    if result.keyword_score < 70 and result.missing_keywords:
+        top = result.missing_keywords[:3]
+        fixes.append(
+            f"Work the highest-impact missing keywords into experience bullets: {', '.join(top)}"
+        )
+
+    skills_only = [
+        m.keyword for m in result.matched_keywords
+        if m.matched_via == "direct" and m.found_in == ["skills"]
+        and weights.get(m.keyword, 1.0) >= _CRITICAL_WEIGHT
+    ]
+    if skills_only:
+        examples = ", ".join(skills_only[:3])
+        fixes.append(
+            f"Show these skills in action, not just in the skills list: {examples}"
+        )
+
+    if result.exp_score < 70:
+        fixes.append(
+            f"Experience reads as {result.years_detected:.1f} years — make older or "
+            "freelance roles visible if the JD asks for more"
+        )
+
+    if result.edu_gap and not result.edu_gap.matched:
+        fixes.append(
+            f"JD prefers a {result.edu_gap.jd_required.title()} — lead with certifications "
+            "and equivalent experience to offset the gap"
+        )
+
+    if result.title_score < 70:
+        fixes.append(
+            f"Align a resume title with the JD's '{result.jd_title}' if it honestly "
+            "describes your role"
+        )
+
+    return fixes[:4]
+
+
+def _render_top_fixes(result, use_color: bool) -> None:
+    fixes = _top_fixes(result)
+    if not fixes:
+        return
+    c = lambda code: _c(code, use_color)
+    b = _box.Box(CYAN, c)
+    b.open("Top Fixes")
+    for i, fix in enumerate(fixes, 1):
+        prefix = f"{i}. "
+        chunks = _chunk_text(fix, _box.CONTENT_W - len(prefix) - 2)
+        for j, chunk in enumerate(chunks):
+            if j == 0:
+                b.raw_row(f"{c(CYAN)}{c(BOLD)}{prefix}{c(NC)}{chunk}", len(prefix) + len(chunk))
+            else:
+                b.row(" " * len(prefix) + chunk)
+    b.close()
     print()
 
 
