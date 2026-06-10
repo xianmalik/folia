@@ -78,7 +78,7 @@ ats-deps: deps
 #   GROQ_API_KEY not set      →  NLP  (run `make ats-deps` first)
 #
 # Override flags still work directly via Python if needed:
-#   .venv/bin/python3 core/scripts/ats_check.py --jd jd.txt --no-groq
+#   .venv/bin/python3 core/scripts/ats_check.py --jd jd.txt --no-llm
 # ────────────────────────────────────────────────────────────────────────────
 
 # Coalesce JD and jd into a single variable (whichever was passed).

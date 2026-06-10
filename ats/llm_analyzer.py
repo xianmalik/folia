@@ -55,12 +55,6 @@ def is_available() -> bool:
     return _HAS_GROQ and bool(os.environ.get("GROQ_API_KEY"))
 
 
-def active_backend() -> str:
-    if _HAS_GROQ and os.environ.get("GROQ_API_KEY"):
-        return "Groq"
-    return "none"
-
-
 # ── low-level chat helpers ─────────────────────────────────────────────────────
 
 

@@ -108,6 +108,7 @@ class JDResult:
     threshold: float
     edu_gap: EduGap | None = None
     author_name: str = ""
+    author_email: str = ""
     mode: str = "jd"
     suggestions: list[str] = field(default_factory=list)
     role_fit: str = ""
@@ -429,13 +430,12 @@ def run(
     resume: ResumeData,
     jd_text: str,
     threshold: float = _PASS_THRESHOLD,
-    use_groq: bool = False,  # kept for call-site compat; prefer use_llm
     use_llm: bool = False,
 ) -> JDResult:
     if not jd_text or not jd_text.strip():
         raise ValueError("jd_text must not be empty")
 
-    if use_llm or use_groq:
+    if use_llm:
         return _run_llm(resume, jd_text, threshold)
     return _run_spacy(resume, jd_text, threshold)
 
@@ -533,6 +533,7 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         threshold=threshold,
         edu_gap=edu_gap,
         author_name=resume.contact.full_name,
+        author_email=resume.contact.email,
         backend="spacy",
         keyword_density=_compute_density(matched),
     )
@@ -621,6 +622,7 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         threshold=threshold,
         edu_gap=edu_gap,
         author_name=resume.contact.full_name,
+        author_email=resume.contact.email,
         suggestions=analysis.suggestions,
         role_fit=analysis.role_fit,
         backend="llm",

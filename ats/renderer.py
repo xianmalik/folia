@@ -137,19 +137,25 @@ def _chunk_text(text: str, width: int) -> list[str]:
     return chunks
 
 
-def _render_jd(result, use_color: bool) -> None:
+def render_jd_header(author: str = "", email: str = "", no_color: bool = False) -> None:
+    """Print the JD report title box. Called before processing so it sits on top."""
+    use_color = not no_color and _is_tty()
     c = lambda code: _c(code, use_color)
-    author = getattr(result, "author_name", "")
-    backend = getattr(result, "backend", "spacy")
-    backend_label = "LLM" if backend == "llm" else "NLP"
     print()
     b = _box.Box(CYAN, c, indent="")
     b.open()
-    b.row(f"folia · ATS Score vs Job Description  [{backend_label}]", color=WHITE)
+    b.row("folia · ATS Score vs Job Description", color=WHITE)
     if author:
-        b.row(f"Author: {author}", color=GRAY)
+        line = f"Author: {author}"
+        if email:
+            line += f"  ·  {email}"
+        b.row(line, color=GRAY)
     b.close()
     print()
+
+
+def _render_jd(result, use_color: bool) -> None:
+    c = lambda code: _c(code, use_color)
 
     if getattr(result, "llm_fallback", False):
         print(f"  {c(YELLOW)}⚠  LLM rate limit hit — results based on local NLP analysis (less accurate){c(NC)}")
@@ -263,6 +269,7 @@ def _render_jd(result, use_color: bool) -> None:
             print(f"  {section.capitalize().ljust(label_w2)}  {c(col2)}{bar2}{c(NC)}  {str(hits).rjust(2)} hits  {pct.rjust(4)}")
         print()
 
+    backend = getattr(result, "backend", "spacy")
     role_fit = getattr(result, "role_fit", "") if backend == "llm" else ""
     suggestions = getattr(result, "suggestions", []) if backend == "llm" else []
     bullet_rewrites = getattr(result, "bullet_rewrites", []) if backend == "llm" else []

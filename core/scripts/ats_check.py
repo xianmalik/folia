@@ -2,9 +2,10 @@
 """
 ATS checker for folia resumes.
 
-Reads resume content directly from source/*.yml (no PDF extraction needed)
-and scores it either as a standalone CV health check or against a job description.
-If GROQ_API_KEY is set, the LLM backend is used automatically for JD matching.
+Extracts resume content from the compiled dist/resume.pdf (building it first
+if needed) and scores it either as a standalone CV health check or against a
+job description. If GROQ_API_KEY is set, the LLM backend is used automatically
+for JD matching.
 
 Usage:
   python3 core/scripts/ats_check.py                         # CV health check
@@ -116,6 +117,10 @@ def main() -> int:
         _step("Loading resume data…")
         resume = pdf_loader.load()
         _done()
+
+        renderer.render_jd_header(
+            resume.contact.full_name, resume.contact.email, no_color=args.no_color
+        )
 
         if args.jd == "-":
             jd_text = sys.stdin.read()

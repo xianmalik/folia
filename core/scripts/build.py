@@ -137,22 +137,6 @@ def run_step_with_spinner(title: str, work_fn, color: str = GREEN) -> any:
 
 
 
-def cleanup_aux_files() -> None:
-    patterns = [
-        str(DIST_DIR / "*.aux"),
-        str(DIST_DIR / "*.log"),
-        str(DIST_DIR / "*.out"),
-        str(DIST_DIR / "*.fls"),
-        str(DIST_DIR / "*.fdb_latexmk"),
-    ]
-    for pattern in patterns:
-        for path in glob.glob(pattern):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-
 def main() -> int:
     version = read_version()
     print_banner(version)
