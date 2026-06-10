@@ -38,7 +38,13 @@ _EXP_OK            = _JC["experience_years"]["ok"]
 _EXP_PARTIAL       = _JC["experience_years"]["partial"]
 _KW_SCORE_DIRECT   = _JC["keyword_scores"]["direct"]
 _KW_SCORE_ONTOLOGY = _JC["keyword_scores"]["ontology"]
+_KW_SCORE_COMPOUND = _JC["keyword_scores"]["compound"]
 _KW_SCORE_FUZZY    = _JC["keyword_scores"]["fuzzy"]
+_SKILLS_ONLY_FACTOR = _JC["skills_only_factor"]
+_IMP_REQUIRED_BOOST = _JC["importance"]["required_boost"]
+_IMP_NICE_FACTOR    = _JC["importance"]["nice_factor"]
+_IMP_FREQ_BONUS     = _JC["importance"]["freq_bonus"]
+_IMP_FREQ_CAP       = _JC["importance"]["freq_cap"]
 _FUZZY_MIN_RATIO   = _JC["fuzzy_min_ratio"]
 _PASS_THRESHOLD    = _JC["pass_threshold"]
 _MAX_REWRITES      = _JC["max_rewrites"]
@@ -69,8 +75,9 @@ def _strip_nontechnical_sections(text: str) -> str:
 class KeywordMatch:
     keyword: str
     found_in: list[str]
-    matched_via: str  # "direct" | "ontology" | "fuzzy"
+    matched_via: str  # "direct" | "ontology" | "compound" | "fuzzy"
     score: float
+    weight: float = 1.0  # importance of this keyword in the JD
 
 
 @dataclass
@@ -116,6 +123,7 @@ class JDResult:
     llm_fallback: bool = False  # True when LLM was attempted but rate-limited
     keyword_density: dict[str, int] = field(default_factory=dict)  # section → hit count
     bullet_rewrites: list[BulletRewrite] = field(default_factory=list)
+    keyword_weights: dict[str, float] = field(default_factory=dict)  # JD keyword → importance
 
 
 def _load_spacy():
@@ -243,70 +251,220 @@ def _build_section_texts(resume: ResumeData) -> dict[str, str]:
     }
 
 
+def _term_variants(norm: str) -> set[str]:
+    """Singular/plural variants of a normalized term (last word only).
+
+    Additive: the original form is always included, so the worst case is a
+    variant that simply never matches.
+    """
+    variants = {norm}
+    words = norm.split()
+    last = words[-1] if words else ""
+    head = " ".join(words[:-1])
+
+    def _with_last(new_last: str) -> str:
+        return f"{head} {new_last}".strip()
+
+    if len(last) > 3:
+        if last.endswith("ies"):
+            variants.add(_with_last(last[:-3] + "y"))
+        elif last.endswith("es"):
+            variants.add(_with_last(last[:-2]))
+            variants.add(_with_last(last[:-1]))
+        elif last.endswith("s") and not last.endswith("ss"):
+            variants.add(_with_last(last[:-1]))
+    if last and not last.endswith("s"):
+        variants.add(_with_last(last + "s"))
+    return variants
+
+
+def _direct_sections(kw_norm: str, section_norms: dict[str, str]) -> list[str]:
+    """Sections where the keyword (or a singular/plural variant) appears whole-word."""
+    pattern = "|".join(re.escape(v) for v in sorted(_term_variants(kw_norm)))
+    rx = re.compile(rf"\b(?:{pattern})\b")
+    return [section for section, text in section_norms.items() if rx.search(text)]
+
+
+def _compound_words(kw_norm: str) -> list[str]:
+    """Content words of a multi-word term ([] when not a compound)."""
+    words = [w for w in kw_norm.split() if len(w) > 2 and w not in _GENERIC_TERMS]
+    return words if len(words) >= 2 else []
+
+
 def _score_keyword(
     kw: str,
-    section_texts: dict[str, str],
+    section_norms: dict[str, str],
     expanded_norms: set[str],
-    skill_items: list[str],
+    fuzzy_candidates: list[str],
 ) -> tuple[float, list[str], str]:
+    """Score one JD keyword against the resume.
+
+    Match ladder: direct (whole-word incl. singular/plural variants) →
+    ontology expansion → compound (every content word of a multi-word term
+    covered individually) → fuzzy string match. Direct matches that appear
+    only in the skills list are slightly discounted: a skill demonstrated in
+    experience or projects reads stronger to a reviewer than a bare list entry.
+    """
     kw_norm = ont.normalize(kw)
-    found_in: list[str] = []
 
-    # Direct match (whole-word to prevent e.g. "java" matching "javascript")
-    for section, text in section_texts.items():
-        if re.search(rf"\b{re.escape(kw_norm)}\b", ont.normalize(text)):
-            found_in.append(section)
+    found_in = _direct_sections(kw_norm, section_norms)
     if found_in:
-        return _KW_SCORE_DIRECT, found_in, "direct"
+        score = _KW_SCORE_DIRECT
+        if found_in == ["skills"]:
+            score *= _SKILLS_ONLY_FACTOR
+        return score, found_in, "direct"
 
-    # Ontology expansion match
-    if kw_norm in expanded_norms:
+    # Ontology expansion match (resume skills imply this keyword)
+    if _term_variants(kw_norm) & expanded_norms:
         return _KW_SCORE_ONTOLOGY, ["skills"], "ontology"
 
-    # Fuzzy match against individual skill items (rapidfuzz)
+    # Compound: "node.js microservices" counts when every content word is
+    # covered somewhere (directly or via ontology), just not as one phrase.
+    words = _compound_words(kw_norm)
+    if words:
+        covered_sections: set[str] = set()
+        all_covered = True
+        for w in words:
+            secs = _direct_sections(w, section_norms)
+            if secs:
+                covered_sections.update(secs)
+            elif _term_variants(w) & expanded_norms:
+                covered_sections.add("skills")
+            else:
+                all_covered = False
+                break
+        if all_covered:
+            return _KW_SCORE_COMPOUND, sorted(covered_sections), "compound"
+
+    # Fuzzy match against short candidate strings (skill items + project tech)
     if _HAS_RAPIDFUZZ:
-        for item in skill_items:
-            if _fuzz.ratio(kw_norm, ont.normalize(item)) >= _FUZZY_MIN_RATIO:
+        scorer = _fuzz.token_set_ratio if " " in kw_norm else _fuzz.ratio
+        for item in fuzzy_candidates:
+            if scorer(kw_norm, ont.normalize(item)) >= _FUZZY_MIN_RATIO:
                 return _KW_SCORE_FUZZY, ["skills"], "fuzzy"
 
     return 0.0, [], "none"
 
 
-def _normalize_title_tokens(tokens: set[str]) -> set[str]:
-    """Map role synonyms to a canonical token so Jaccard can match across terms."""
-    return {_ROLE_EQUIV.get(t, t) for t in tokens}
+# ── keyword importance ───────────────────────────────────────────────────────
+
+_REQUIRED_CTX_RE = re.compile(
+    r"\b(?:required|must[ -]have|must\b|essential|proficient|proficiency|expert(?:ise)?|strong)\b",
+    re.IGNORECASE,
+)
+_NICE_CTX_RE = re.compile(
+    r"\b(?:nice[ -]to[ -]have|preferred|a plus|plus\b|bonus|good[ -]to[ -]have|familiar(?:ity)?)\b",
+    re.IGNORECASE,
+)
 
 
-def _title_score(jd_title: str, positions: list[Position]) -> float:
+def _keyword_weights(jd_text: str, keywords: list[str]) -> dict[str, float]:
+    """Importance of each JD keyword from repetition and surrounding context.
+
+    A keyword mentioned three times near "required" matters more than one
+    mentioned once under "nice to have". Weights multiply each keyword's
+    contribution to the keyword score (matched and missing alike).
+    """
+    norm_text = ont.normalize(jd_text)
+    lines = [ln for ln in jd_text.split("\n") if ln.strip()]
+
+    weights: dict[str, float] = {}
+    for kw in keywords:
+        kw_norm = ont.normalize(kw)
+        freq = len(re.findall(rf"\b{re.escape(kw_norm)}\b", norm_text)) if kw_norm else 0
+        weight = 1.0 + _IMP_FREQ_BONUS * min(max(freq - 1, 0), _IMP_FREQ_CAP)
+
+        in_required = in_nice = False
+        kw_lower = kw.lower()
+        for line in lines:
+            if kw_lower in line.lower():
+                if _REQUIRED_CTX_RE.search(line):
+                    in_required = True
+                elif _NICE_CTX_RE.search(line):
+                    in_nice = True
+        if in_required:
+            weight *= _IMP_REQUIRED_BOOST
+        elif in_nice:
+            weight *= _IMP_NICE_FACTOR
+
+        weights[kw] = round(weight, 3)
+    return weights
+
+
+def _canonical_title_tokens(title: str, ontology: dict) -> set[str]:
+    """Normalize a job title to comparable role tokens.
+
+    Applies the ontology's title_aliases phrase map (e.g. "swe" →
+    "software engineer"), strips seniority words, and folds role synonyms
+    (developer/programmer → engineer).
+    """
+    t = ont.normalize(title)
+    for phrase, canonical in ontology.get("title_aliases", {}).items():
+        p = ont.normalize(phrase)
+        if p and re.search(rf"\b{re.escape(p)}\b", t):
+            t = re.sub(rf"\b{re.escape(p)}\b", ont.normalize(canonical), t)
+    tokens = set(t.split()) - _SENIORITY
+    return {_ROLE_EQUIV.get(tok, tok) for tok in tokens}
+
+
+def _seniority_level(title: str, levels: dict[str, int]) -> int | None:
+    tokens = set(ont.normalize(title).split())
+    found = [lvl for tok, lvl in levels.items() if tok and tok in tokens]
+    return max(found) if found else None
+
+
+def _seniority_bonus(jd_title: str, positions: list[Position], levels: dict[str, int]) -> float:
+    """0-10 bonus for how well resume seniority lines up with the JD's."""
+    jd_lvl = _seniority_level(jd_title, levels)
+    resume_lvls = [lvl for p in positions if (lvl := _seniority_level(p.title, levels)) is not None]
+    resume_lvl = max(resume_lvls) if resume_lvls else None
+
+    if jd_lvl is None and resume_lvl is None:
+        return 10.0  # no seniority requirement to miss
+    if jd_lvl is None or resume_lvl is None:
+        return 5.0
+    diff = abs(jd_lvl - resume_lvl)
+    if diff == 0:
+        return 10.0
+    if diff == 1:
+        return 6.0
+    return 0.0
+
+
+def _title_score(jd_title: str, positions: list[Position], ontology: dict | None = None) -> float:
     if not jd_title or not positions:
         return 50.0
+    ontology = ontology or ont.load_ontology()
 
-    jd_tokens = _normalize_title_tokens(set(ont.normalize(jd_title).split()) - _SENIORITY)
+    jd_tokens = _canonical_title_tokens(jd_title, ontology)
     if not jd_tokens:
         return 50.0
 
     best = 0.0
     for pos in positions:
-        pos_tokens = _normalize_title_tokens(set(ont.normalize(pos.title).split()) - _SENIORITY)
+        pos_tokens = _canonical_title_tokens(pos.title, ontology)
         if not pos_tokens:
             continue
         inter = jd_tokens & pos_tokens
-        union = jd_tokens | pos_tokens
-        sim = len(inter) / len(union) if union else 0.0
+        # Blend overlap coefficient (containment: "software engineer" inside
+        # "senior full stack software engineer" scores 1.0) with Jaccard
+        # (penalises titles that share little overall).
+        overlap = len(inter) / min(len(jd_tokens), len(pos_tokens))
+        jaccard = len(inter) / len(jd_tokens | pos_tokens)
+        sim = 0.6 * overlap + 0.4 * jaccard
         if sim > best:
             best = sim
 
-    # Seniority match bonus
-    jd_full_tokens = set(ont.normalize(jd_title).split())
-    resume_titles_concat = " ".join(ont.normalize(p.title) for p in positions)
-    resume_tokens = set(resume_titles_concat.split())
-    bonus = 10.0 if (jd_full_tokens & _SENIORITY) and (resume_tokens & _SENIORITY) else 0.0
-
-    return min(100.0, best * 100 + bonus)
+    bonus = _seniority_bonus(jd_title, positions, ontology.get("seniority_levels", {}))
+    return min(100.0, round(best * 90.0 + bonus, 1))
 
 
 def _experience_score(resume: ResumeData, jd_text: str) -> tuple[float, float]:
-    """Returns (score, years_detected)."""
+    """Returns (score, years_detected).
+
+    Continuous curves instead of cliffs: 4.9 years against a 5-year
+    requirement should score ~98, not drop a whole bracket.
+    """
     years = compute_years_experience(resume.all_positions())
     req_match = re.search(r"(\d+)\+?\s*(?:to\s*\d+\s*)?years?", jd_text.lower())
     req_years = float(req_match.group(1)) if req_match else None
@@ -315,23 +473,27 @@ def _experience_score(resume: ResumeData, jd_text: str) -> tuple[float, float]:
         ratio = years / req_years
         if ratio >= 1.0:
             score = 100.0
-        elif ratio >= 0.8:
-            score = 75.0
-        elif ratio >= 0.5:
-            score = 50.0
         else:
-            score = 25.0
+            # Slightly superlinear: small shortfalls cost little, large ones a lot.
+            score = max(15.0, round(100.0 * ratio ** 1.15, 1))
     else:
-        if years >= _EXP_IDEAL:
+        # No stated requirement — interpolate the config ladder linearly.
+        ladder = [
+            (float(_EXP_IDEAL), 100.0),
+            (float(_EXP_GOOD), 90.0),
+            (float(_EXP_OK), 70.0),
+            (float(_EXP_PARTIAL), 40.0),
+            (0.0, 10.0),
+        ]
+        if years >= ladder[0][0]:
             score = 100.0
-        elif years >= _EXP_GOOD:
-            score = 90.0
-        elif years >= _EXP_OK:
-            score = 70.0
-        elif years >= _EXP_PARTIAL:
-            score = 40.0
         else:
             score = 10.0
+            for (hi_y, hi_s), (lo_y, lo_s) in zip(ladder, ladder[1:]):
+                if lo_y <= years < hi_y:
+                    frac = (years - lo_y) / (hi_y - lo_y) if hi_y > lo_y else 0.0
+                    score = round(lo_s + (hi_s - lo_s) * frac, 1)
+                    break
 
     return score, years
 
@@ -482,15 +644,26 @@ def _assemble_result(
     ontology: dict,
     matched: list[KeywordMatch],
     missing: list[str],
-    jd_keyword_count: int,
-    total_weighted: float,
+    jd_keywords: list[str],
+    kw_weights: dict[str, float],
     threshold: float,
     backend: str,
     **extras,
 ) -> JDResult:
-    """Compute the weighted component scores and build the final JDResult."""
-    keyword_score = (total_weighted / jd_keyword_count) * 100.0 if jd_keyword_count else 0.0
-    title_score = _title_score(jd_title, resume.positions)
+    """Compute the weighted component scores and build the final JDResult.
+
+    The keyword score is an importance-weighted average: each keyword
+    contributes match_score × importance, normalized by total importance —
+    so missing a "required" keyword hurts more than missing a "plus".
+    """
+    for m in matched:
+        m.weight = kw_weights.get(m.keyword, 1.0)
+    missing = sorted(missing, key=lambda k: kw_weights.get(k, 1.0), reverse=True)
+
+    total_importance = sum(kw_weights.get(k, 1.0) for k in jd_keywords)
+    earned = sum(m.score * m.weight for m in matched)
+    keyword_score = (earned / total_importance) * 100.0 if total_importance else 0.0
+    title_score = _title_score(jd_title, resume.positions, ontology)
     exp_score, years_detected = _experience_score(resume, jd_text)
     edu_score, edu_gap = _education_score(resume, jd_text, ontology)
     overall = (
@@ -507,7 +680,7 @@ def _assemble_result(
         edu_score=round(edu_score, 1),
         matched_keywords=matched,
         missing_keywords=missing,
-        jd_keyword_count=jd_keyword_count,
+        jd_keyword_count=len(jd_keywords),
         jd_title=jd_title,
         years_detected=years_detected,
         passed=overall >= threshold,
@@ -517,6 +690,7 @@ def _assemble_result(
         author_email=resume.contact.email,
         backend=backend,
         keyword_density=_compute_density(matched),
+        keyword_weights=kw_weights,
         **extras,
     )
 
@@ -535,30 +709,28 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float, progress) -> 
     progress.done(f"{len(jd_keywords)} keywords identified")
 
     progress.step("Matching resume against keywords…")
-    section_texts = _build_section_texts(resume)
-    skill_items = [item for sc in resume.skills for item in sc.items]
-    all_skill_names = skill_items[:]
+    section_norms = {s: ont.normalize(t) for s, t in _build_section_texts(resume).items()}
+    fuzzy_candidates = [item for sc in resume.skills for item in sc.items]
     for proj in resume.projects:
-        all_skill_names.extend(proj.tech)
-    expanded = ont.expand_skills(all_skill_names, ontology)
+        fuzzy_candidates.extend(proj.tech)
+    expanded = ont.expand_skills(fuzzy_candidates, ontology)
     expanded_norms = {ont.normalize(s) for s in expanded}
 
     matched: list[KeywordMatch] = []
     missing: list[str] = []
-    total_weighted = 0.0
     for kw in jd_keywords:
-        score, found_in, via = _score_keyword(kw, section_texts, expanded_norms, skill_items)
+        score, found_in, via = _score_keyword(kw, section_norms, expanded_norms, fuzzy_candidates)
         if score > 0:
             matched.append(KeywordMatch(keyword=kw, found_in=found_in, matched_via=via, score=score))
-            total_weighted += score
         else:
             missing.append(kw)
     progress.done(f"{len(matched)} matched · {len(missing)} missing")
 
     progress.step("Computing weighted scores…")
+    kw_weights = _keyword_weights(jd_text, jd_keywords)
     result = _assemble_result(
         resume, jd_text, jd_title, ontology,
-        matched, missing, len(jd_keywords), total_weighted,
+        matched, missing, jd_keywords, kw_weights,
         threshold, backend="spacy",
     )
     progress.done()
@@ -611,16 +783,15 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float, progress) -> JD
 
     progress.step("Computing weighted scores…")
     matched: list[KeywordMatch] = []
-    total_weighted = 0.0
     for lm in analysis.matched:
         via   = _LLM_VIA_MAP.get(lm.match_type, "direct")
         score = _LLM_SCORE_MAP.get(lm.match_type, _KW_SCORE_DIRECT)
         matched.append(KeywordMatch(keyword=lm.keyword, found_in=lm.found_in, matched_via=via, score=score))
-        total_weighted += score
 
+    kw_weights = _keyword_weights(jd_text, jd_keywords)
     result = _assemble_result(
         resume, jd_text, jd_title, ontology,
-        matched, analysis.missing, len(jd_keywords), total_weighted,
+        matched, analysis.missing, jd_keywords, kw_weights,
         threshold, backend="llm",
         suggestions=analysis.suggestions,
         role_fit=analysis.role_fit,

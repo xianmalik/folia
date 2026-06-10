@@ -20,9 +20,10 @@ def test_extract_title_from_hiring_sentence():
 # ── keyword scoring ──────────────────────────────────────────────────────────
 
 def _sections(**kwargs) -> dict[str, str]:
+    """Normalized section texts, as _score_keyword now receives them."""
     base = {"summary": "", "experience": "", "projects": "", "skills": "", "education": ""}
     base.update(kwargs)
-    return base
+    return {s: ont.normalize(t) for s, t in base.items()}
 
 
 def test_direct_match_is_whole_word():
@@ -32,9 +33,28 @@ def test_direct_match_is_whole_word():
     assert score == 0.0 and via == "none"
 
     score, found_in, via = jm._score_keyword("JavaScript", sections, set(), [])
-    assert score == jm._KW_SCORE_DIRECT
     assert via == "direct"
     assert found_in == ["skills"]
+    # skills-only direct matches are slightly discounted
+    assert score == jm._KW_SCORE_DIRECT * jm._SKILLS_ONLY_FACTOR
+
+
+def test_direct_match_in_experience_gets_full_score():
+    sections = _sections(experience="Built React dashboards", skills="React")
+    score, found_in, via = jm._score_keyword("React", sections, set(), [])
+    assert via == "direct"
+    assert score == jm._KW_SCORE_DIRECT
+    assert set(found_in) == {"experience", "skills"}
+
+
+def test_direct_match_plural_variants():
+    sections = _sections(experience="Designed REST APIs for payments")
+    score, _, via = jm._score_keyword("REST API", sections, set(), [])
+    assert via == "direct"
+
+    sections = _sections(experience="Built a microservice platform")
+    score, _, via = jm._score_keyword("microservices", sections, set(), [])
+    assert via == "direct"
 
 
 def test_ontology_match():
@@ -44,6 +64,22 @@ def test_ontology_match():
     assert via == "ontology"
 
 
+def test_compound_match():
+    sections = _sections(experience="Built services with Node.js", skills="Docker")
+    expanded = {ont.normalize("microservices")}
+    score, found_in, via = jm._score_keyword(
+        "Node.js microservices", sections, expanded, []
+    )
+    assert via == "compound"
+    assert score == jm._KW_SCORE_COMPOUND
+
+
+def test_compound_requires_all_words():
+    sections = _sections(experience="Built services with Node.js")
+    score, _, via = jm._score_keyword("Node.js Kafka pipelines", sections, set(), [])
+    assert via == "none" and score == 0.0
+
+
 def test_fuzzy_match_against_skill_items():
     score, found_in, via = jm._score_keyword(
         "PostgreSQL", _sections(), set(), ["Postgres"]
@@ -51,6 +87,26 @@ def test_fuzzy_match_against_skill_items():
     assert via in ("fuzzy", "none")  # rapidfuzz optional
     if via == "fuzzy":
         assert score == jm._KW_SCORE_FUZZY
+
+
+# ── keyword importance ───────────────────────────────────────────────────────
+
+def test_required_keywords_weigh_more():
+    jd = (
+        "Requirements\n"
+        "Strong TypeScript experience is required.\n"
+        "GraphQL is a plus.\n"
+    )
+    weights = jm._keyword_weights(jd, ["TypeScript", "GraphQL"])
+    assert weights["TypeScript"] > 1.0
+    assert weights["GraphQL"] < 1.0
+    assert weights["TypeScript"] > weights["GraphQL"]
+
+
+def test_repeated_keywords_weigh_more():
+    jd = "We use React. React powers our frontend. Experience with React required."
+    weights = jm._keyword_weights(jd, ["React", "Svelte"])
+    assert weights["React"] > weights["Svelte"]
 
 
 # ── title scoring ────────────────────────────────────────────────────────────
