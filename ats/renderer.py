@@ -1,21 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
-import sys
-
 from . import config as _cfg
-from . import box as _box
-
-# ANSI codes — matches build.py palette
-CYAN = "\033[0;36m"
-GREEN = "\033[0;32m"
-YELLOW = "\033[1;33m"
-RED = "\033[0;31m"
-WHITE = "\033[1;37m"
-GRAY = "\033[0;37m"
-BOLD = "\033[1m"
-NC = "\033[0m"
+from . import term as _box
+from .term import BOLD, CYAN, GRAY, GREEN, NC, RED, WHITE, YELLOW
 
 _RC = _cfg.get()["renderer"]
 _THRESH_PASS = _RC["thresh_pass"]
@@ -28,7 +16,7 @@ def _c(code: str, use_color: bool) -> str:
 
 
 def _is_tty() -> bool:
-    return hasattr(sys.stdout, "fileno") and os.isatty(sys.stdout.fileno())
+    return _box.is_tty()
 
 
 def _bar(score: float, max_score: float, width: int = 28) -> str:

@@ -1,16 +1,53 @@
-"""Box-drawing primitives for ATS terminal output.
+"""Shared terminal output primitives for the ATS package.
 
-Single source of truth for box width and border style.
-All box-shaped sections in renderer.py and ats_check.py use this module.
+Single source of truth for ANSI color codes, step/done progress lines,
+and box-drawing (border style + width). Used by renderer.py and the
+ats_check CLI.
 """
 from __future__ import annotations
 
+import os
+import sys
+
+# ── ANSI codes — matches the build.py palette ─────────────────────────────────
+CYAN   = "\033[0;36m"
+GREEN  = "\033[0;32m"
+YELLOW = "\033[1;33m"
+RED    = "\033[0;31m"
+WHITE  = "\033[1;37m"
+GRAY   = "\033[0;37m"
+BOLD   = "\033[1m"
+NC     = "\033[0m"
+
+
+def is_tty() -> bool:
+    return hasattr(sys.stdout, "fileno") and os.isatty(sys.stdout.fileno())
+
+
+def make_resolver(use_color: bool):
+    """Return c(code) that yields the ANSI code or "" depending on use_color."""
+    return (lambda code: code) if use_color else (lambda code: "")
+
+
+# ── inline progress steps ─────────────────────────────────────────────────────
+
+STEP_W = 52  # fixed width for the label column
+
+
+def step(label: str) -> None:
+    pad = max(1, STEP_W - 2 - len(label))
+    print(f"  {label}{' ' * pad}", end="", flush=True)
+
+
+def done(note: str = "") -> None:
+    note_str = f"  {GRAY}{note}{NC}" if note else ""
+    print(f"{GREEN}✓{NC}{note_str}")
+
+
+# ── box drawing ───────────────────────────────────────────────────────────────
+
 WIDTH     = 76          # ─ characters between corner pieces
 CONTENT_W = WIDTH - 4  # usable text width inside  │  …  │  (2 spaces each side)
-
-_BOLD  = "\033[1m"
-_WHITE = "\033[1;37m"
-_NC    = "\033[0m"
 
 
 class Box:
@@ -35,12 +72,12 @@ class Box:
     def open(self, title: str = "") -> "Box":
         """Top border. If *title* is given, prints a bold title row + ├─ sep."""
         c, col, ind = self._c, self._col, self._ind
-        print(f"{ind}{c(col)}╭{'─' * WIDTH}╮{c(_NC)}")
+        print(f"{ind}{c(col)}╭{'─' * WIDTH}╮{c(NC)}")
         if title:
             pad = max(WIDTH - 2 - len(title), 0)
             print(
-                f"{ind}{c(col)}│{c(_BOLD)}{c(_WHITE)}  {title}"
-                f"{' ' * pad}{c(_NC)}{c(col)}│{c(_NC)}"
+                f"{ind}{c(col)}│{c(BOLD)}{c(WHITE)}  {title}"
+                f"{' ' * pad}{c(NC)}{c(col)}│{c(NC)}"
             )
             self.sep()
         return self
@@ -48,13 +85,13 @@ class Box:
     def sep(self) -> "Box":
         """Mid separator  ├───┤."""
         c, col, ind = self._c, self._col, self._ind
-        print(f"{ind}{c(col)}├{'─' * WIDTH}┤{c(_NC)}")
+        print(f"{ind}{c(col)}├{'─' * WIDTH}┤{c(NC)}")
         return self
 
     def close(self) -> None:
         """Bottom border  ╰───╯."""
         c, col, ind = self._c, self._col, self._ind
-        print(f"{ind}{c(col)}╰{'─' * WIDTH}╯{c(_NC)}")
+        print(f"{ind}{c(col)}╰{'─' * WIDTH}╯{c(NC)}")
 
     # ── content rows ───────────────────────────────────────────────────────
 
@@ -63,10 +100,10 @@ class Box:
         c, col, ind = self._c, self._col, self._ind
         pad = max(CONTENT_W - len(text), 0)
         if color or bold:
-            inner = f"{c(color)}{c(_BOLD) if bold else ''}{text}{c(_NC)}"
+            inner = f"{c(color)}{c(BOLD) if bold else ''}{text}{c(NC)}"
         else:
             inner = text
-        print(f"{ind}{c(col)}│{c(_NC)}  {inner}{' ' * pad}  {c(col)}│{c(_NC)}")
+        print(f"{ind}{c(col)}│{c(NC)}  {inner}{' ' * pad}  {c(col)}│{c(NC)}")
         return self
 
     def raw_row(self, rendered: str, visible_len: int) -> "Box":
@@ -75,10 +112,10 @@ class Box:
         """
         c, col, ind = self._c, self._col, self._ind
         pad = max(CONTENT_W - visible_len, 0)
-        print(f"{ind}{c(col)}│{c(_NC)}  {rendered}{' ' * pad}  {c(col)}│{c(_NC)}")
+        print(f"{ind}{c(col)}│{c(NC)}  {rendered}{' ' * pad}  {c(col)}│{c(NC)}")
         return self
 
 
 def rule(color: str, c, indent: str = "  ") -> None:
     """Horizontal rule that aligns with box outer edges (WIDTH + 2 wide)."""
-    print(f"{indent}{c(color)}{'─' * (WIDTH + 2)}{c(_NC)}")
+    print(f"{indent}{c(color)}{'─' * (WIDTH + 2)}{c(NC)}")

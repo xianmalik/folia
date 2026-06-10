@@ -23,13 +23,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ats import pdf_loader, health, renderer  # noqa: E402
+from ats import pdf_loader, health, renderer, term  # noqa: E402
 from ats.llm_analyzer import RateLimitError  # noqa: E402
-
-_CYAN  = "\033[0;36m"
-_GREEN = "\033[0;32m"
-_GRAY  = "\033[0;37m"
-_NC    = "\033[0m"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -93,19 +88,6 @@ def _resolve_llm(args) -> bool:
     return is_available()
 
 
-_STEP_W = 52
-
-
-def _step(label: str) -> None:
-    pad = max(1, _STEP_W - 2 - len(label))
-    print(f"  {label}{' ' * pad}", end="", flush=True)
-
-
-def _done(note: str = "") -> None:
-    note_str = f"  {_GRAY}{note}{_NC}" if note else ""
-    print(f"{_GREEN}✓{_NC}{note_str}")
-
-
 def main() -> int:
     args = _parse_args()
 
@@ -114,9 +96,9 @@ def main() -> int:
     if args.jd is not None:
         from ats import jd_matcher
 
-        _step("Loading resume data…")
+        term.step("Loading resume data…")
         resume = pdf_loader.load()
-        _done()
+        term.done()
 
         renderer.render_jd_header(
             resume.contact.full_name, resume.contact.email, no_color=args.no_color
@@ -140,22 +122,22 @@ def main() -> int:
             result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=use_llm)
         except RateLimitError:
             print(
-                f"\n  {_CYAN}⚡ LLM rate limit hit — falling back to local NLP check{_NC}\n",
+                f"\n  {term.CYAN}⚡ LLM rate limit hit — falling back to local NLP check{term.NC}\n",
                 file=sys.stderr, flush=True,
             )
             result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=False)
             result.llm_fallback = True
     else:
-        _step("Loading resume data…")
+        term.step("Loading resume data…")
         resume = pdf_loader.load()
-        _done()
+        term.done()
 
-        _step("Running ATS health checks…")
+        term.step("Running ATS health checks…")
         result = health.run(resume, threshold=args.threshold)
-        _done()
+        term.done()
 
-        _step("Generating report…")
-        _done()
+        term.step("Generating report…")
+        term.done()
         print()
 
     renderer.render(result, no_color=args.no_color)
@@ -166,15 +148,12 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except RateLimitError as e:
-        from ats.box import Box
-        _RED  = "\033[0;31m"
-        _BOLD = "\033[1m"
-        _NC   = "\033[0m"
-        c = lambda code: code  # color always on for error output
+        c = term.make_resolver(True)  # color always on for error output
         print(file=sys.stderr)
-        b = Box(color=_RED, c=c)
+        b = term.Box(color=term.RED, c=c)
         b.open()
-        b.raw_row(f"{_BOLD}✗  {e} — aborting check.{_NC}", len(f"✗  {e} — aborting check."))
+        msg = f"✗  {e} — aborting check."
+        b.raw_row(f"{term.BOLD}{msg}{term.NC}", len(msg))
         b.close()
         print(file=sys.stderr)
         sys.exit(1)
