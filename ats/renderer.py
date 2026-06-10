@@ -206,6 +206,13 @@ def _render_jd(result, use_color: bool) -> None:
     print(f"  {c(GRAY)}Experience detected:{c(NC)} {c(WHITE)}{result.years_detected:.1f} years{c(NC)}")
     print(f"  {c(GRAY)}Keywords extracted from JD:{c(NC)} {c(WHITE)}{result.jd_keyword_count}{c(NC)} · matched: {c(GREEN)}{len(result.matched_keywords)}{c(NC)} · missing: {c(RED)}{len(result.missing_keywords)}{c(NC)}")
 
+    if result.soft_skills:
+        rendered = "  ".join(
+            f"{c(GREEN)}✓{c(NC)} {skill}" if present else f"{c(RED)}✗{c(NC)} {skill}"
+            for skill, present in result.soft_skills
+        )
+        print(f"  {c(GRAY)}Soft skills in JD:{c(NC)} {rendered}  {c(GRAY)}(informational — not scored){c(NC)}")
+
     g = result.edu_gap
     if g:
         resume_label = f"{g.resume_level.upper()}"
@@ -241,6 +248,7 @@ def _render_jd(result, use_color: bool) -> None:
         b = _box.Box(GREEN, c)
         b.open("Matched Keywords")
         kw_indent = "    "
+        any_stale = False
         for via, label, col, note in groups:
             group = [m for m in result.matched_keywords if m.matched_via == via]
             if not group:
@@ -251,8 +259,13 @@ def _render_jd(result, use_color: bool) -> None:
                 f"{c(col)}{c(BOLD)}{header}{c(NC)}{c(GRAY)}{note_str}{c(NC)}",
                 len(header) + len(note_str),
             )
-            for ln in _wrap([m.keyword for m in group], indent=len(kw_indent)):
+            names = [m.keyword + ("*" if m.stale else "") for m in group]
+            any_stale = any_stale or any(m.stale for m in group)
+            for ln in _wrap(names, indent=len(kw_indent)):
                 b.row(kw_indent + ln)
+        if any_stale:
+            b.sep()
+            b.row("* demonstrated only in roles before your current one", color=GRAY)
         b.close()
         print()
 

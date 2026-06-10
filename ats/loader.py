@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
@@ -373,6 +374,61 @@ def _parse_languages(lines: list[str]) -> list[Language]:
         parts = ln.split(" ", 1)
         langs.append(Language(name=parts[0], level=parts[1] if len(parts) > 1 else ""))
     return langs
+
+
+# ── extraction statistics (for the parseability check) ───────────────────────
+
+@dataclass
+class ExtractionStats:
+    """Raw signals about how cleanly text came out of the PDF."""
+    pages: int
+    chars: int
+    words: int
+    lines: int
+    images: int             # embedded raster images (icons/graphics are ATS-invisible)
+    replacement_chars: int  # U+FFFD and friends — font/encoding damage
+    unlabeled_lines: int    # lines before any recognised section header (beyond contact)
+    median_line_len: float  # very short medians suggest multi-column scramble
+
+    @property
+    def chars_per_page(self) -> float:
+        return self.chars / self.pages if self.pages else 0.0
+
+
+_CONTACT_BLOCK_LINES = 6  # name, role, address, contact bar — a normal unlabeled head
+
+
+def extraction_stats(pdf_path: Path = PDF_PATH) -> ExtractionStats:
+    """Measure extraction quality the way an ATS parser would experience it."""
+    if not _HAS_PYPDF:
+        raise RuntimeError("pypdf not installed — run: pip install pypdf")
+    reader = pypdf.PdfReader(str(pdf_path))
+
+    raw_text = ""
+    images = 0
+    for page in reader.pages:
+        raw_text += (page.extract_text() or "") + "\n"
+        try:
+            images += len(page.images)
+        except Exception:
+            pass  # malformed resource dict — counts as zero rather than failing
+
+    lines = _extract_lines(pdf_path)
+    sections = _split_sections(lines)
+    header_lines = len(sections.get("header", []))
+    line_lens = sorted(len(ln) for ln in lines)
+    median_len = float(line_lens[len(line_lens) // 2]) if line_lens else 0.0
+
+    return ExtractionStats(
+        pages=len(reader.pages),
+        chars=len(raw_text),
+        words=len(raw_text.split()),
+        lines=len(lines),
+        images=images,
+        replacement_chars=raw_text.count("�"),
+        unlabeled_lines=max(0, header_lines - _CONTACT_BLOCK_LINES),
+        median_line_len=median_len,
+    )
 
 
 # ── public API ────────────────────────────────────────────────────────────────

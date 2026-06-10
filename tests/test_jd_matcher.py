@@ -132,6 +132,66 @@ def test_repeated_keywords_weigh_more():
     assert weights["React"] > weights["Svelte"]
 
 
+def test_jd_block_headings_set_importance():
+    jd = (
+        "Requirements\n"
+        "- TypeScript\n"
+        "- PostgreSQL\n"
+        "\n"
+        "Nice to have\n"
+        "- GraphQL\n"
+    )
+    weights = jm._keyword_weights(jd, ["TypeScript", "GraphQL"])
+    assert weights["TypeScript"] > 1.0   # under Requirements heading
+    assert weights["GraphQL"] < 1.0      # under Nice to have heading
+
+
+# ── stemmed matching ─────────────────────────────────────────────────────────
+
+def test_stem_family_verb_noun_forms():
+    family = jm._stem_family("manage")
+    assert {"managed", "managing", "management"} <= family
+    family = jm._stem_family("management")
+    assert "managed" in family
+
+
+def test_stem_family_protects_short_tech_names():
+    assert jm._stem_family("go") == set()
+    assert jm._stem_family("aws") == set()
+
+
+def test_stemmed_direct_match():
+    sections = _sections(experience="Managed a team of five engineers")
+    score, _, via = jm._score_keyword("manage", sections, set(), [])
+    assert via == "direct"
+
+    sections = _sections(experience="Mentored juniors through code review")
+    score, _, via = jm._score_keyword("mentoring", sections, set(), [])
+    assert via == "direct"
+
+
+# ── recency / staleness ──────────────────────────────────────────────────────
+
+def test_stale_discount_for_old_roles_only(sample_resume):
+    # "Python" appears only in the older Initech position, not the current one
+    m_old = jm.KeywordMatch("Python", ["experience"], "direct", 1.0)
+    m_new = jm.KeywordMatch("React", ["experience"], "direct", 1.0)
+    jm._apply_stale_discount([m_old, m_new], sample_resume)
+    assert m_old.stale and m_old.score < 1.0
+    assert not m_new.stale and m_new.score == 1.0
+
+
+# ── soft skills ──────────────────────────────────────────────────────────────
+
+def test_soft_skills_scanned_not_scored(sample_resume):
+    jd = "We value strong communication and stakeholder management. TypeScript required."
+    found = dict(jm._scan_soft_skills(jd, sample_resume))
+    assert "communication" in found
+    assert "stakeholder management" in found
+    # sample resume mentions neither
+    assert found["communication"] is False
+
+
 # ── title scoring ────────────────────────────────────────────────────────────
 
 def test_title_score_exact_role_match():

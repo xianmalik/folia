@@ -41,6 +41,7 @@ _KW_SCORE_ONTOLOGY = _JC["keyword_scores"]["ontology"]
 _KW_SCORE_COMPOUND = _JC["keyword_scores"]["compound"]
 _KW_SCORE_FUZZY    = _JC["keyword_scores"]["fuzzy"]
 _SKILLS_ONLY_FACTOR = _JC["skills_only_factor"]
+_STALE_FACTOR       = _JC["stale_factor"]
 _IMP_REQUIRED_BOOST = _JC["importance"]["required_boost"]
 _IMP_NICE_FACTOR    = _JC["importance"]["nice_factor"]
 _IMP_FREQ_BONUS     = _JC["importance"]["freq_bonus"]
@@ -50,6 +51,7 @@ _PASS_THRESHOLD    = _JC["pass_threshold"]
 _MAX_REWRITES      = _JC["max_rewrites"]
 
 _GENERIC_TERMS: set[str] = set(_KW["generic_terms"])
+_SOFT_SKILLS: list[str] = _KW.get("soft_skills", [])
 _SENIORITY: set[str] = set(_KW["seniority"])
 _HR_WORD_BLOCKLIST: set[str] = set(_KW["hr_word_blocklist"])
 _ROLE_EQUIV: dict[str, str] = _KW["role_equiv"]
@@ -78,6 +80,7 @@ class KeywordMatch:
     matched_via: str  # "direct" | "ontology" | "compound" | "fuzzy"
     score: float
     weight: float = 1.0  # importance of this keyword in the JD
+    stale: bool = False  # matched only in roles older than the current one
 
 
 @dataclass
@@ -124,6 +127,7 @@ class JDResult:
     keyword_density: dict[str, int] = field(default_factory=dict)  # section → hit count
     bullet_rewrites: list[BulletRewrite] = field(default_factory=list)
     keyword_weights: dict[str, float] = field(default_factory=dict)  # JD keyword → importance
+    soft_skills: list[tuple[str, bool]] = field(default_factory=list)  # (skill in JD, present in resume)
 
 
 def _load_spacy():
@@ -324,9 +328,39 @@ def _term_variants(norm: str) -> set[str]:
     return variants
 
 
+_STEM_STRIP = ("ment", "tion", "ing", "ed", "es", "er", "s")
+_STEM_GROW = ("", "e", "s", "es", "ed", "ing", "ment", "ement", "ion", "er")
+
+
+def _stem_family(norm: str) -> set[str]:
+    """Derivational surface forms of the head word (Sovren-style stemming).
+
+    "manage" ↔ "managed" ↔ "managing" ↔ "management" all hit. Junk forms are
+    harmless — matching is additive, and a form like "manageed" never occurs
+    in real text. Words under 5 chars are left alone (protects Go, AWS, C#…).
+    """
+    words = norm.split()
+    last = words[-1] if words else ""
+    if len(last) < 5 or not last.isalpha():
+        return set()
+
+    bases = {last}
+    for suf in _STEM_STRIP:
+        if last.endswith(suf) and len(last) - len(suf) >= 4:
+            bases.add(last[: -len(suf)])
+    for b in list(bases):
+        if b.endswith("e"):
+            bases.add(b[:-1])
+
+    head = " ".join(words[:-1])
+    return {f"{head} {b}{suf}".strip() for b in bases for suf in _STEM_GROW}
+
+
 def _direct_sections(kw_norm: str, section_norms: dict[str, str]) -> list[str]:
-    """Sections where the keyword (or a singular/plural variant) appears whole-word."""
-    pattern = "|".join(re.escape(v) for v in sorted(_term_variants(kw_norm)))
+    """Sections where the keyword appears whole-word, including
+    singular/plural variants and the stemmed family of the head word."""
+    forms = _term_variants(kw_norm) | _stem_family(kw_norm)
+    pattern = "|".join(re.escape(v) for v in sorted(forms))
     rx = re.compile(rf"\b(?:{pattern})\b")
     return [section for section, text in section_norms.items() if rx.search(text)]
 
@@ -402,17 +436,48 @@ _NICE_CTX_RE = re.compile(
     r"\b(?:nice[ -]to[ -]have|preferred|a plus|plus\b|bonus|good[ -]to[ -]have|familiar(?:ity)?)\b",
     re.IGNORECASE,
 )
+_REQUIRED_HEADING_RE = re.compile(
+    r"^(?:requirements?|(?:minimum |basic )?qualifications?|must[ -]haves?"
+    r"|what (?:you(?:'|’)?ll need|we(?:'|’)re looking for)|skills?(?: required)?)\b",
+    re.IGNORECASE,
+)
+_NICE_HEADING_RE = re.compile(
+    r"^(?:nice[ -]to[ -]haves?|preferred(?: qualifications?)?|bonus(?: points?)?"
+    r"|good[ -]to[ -]haves?|extra credit|pluses)\b",
+    re.IGNORECASE,
+)
+
+
+def _classify_jd_blocks(jd_text: str) -> list[tuple[str, str]]:
+    """Split the JD into (kind, text) blocks by heading: "required",
+    "nice", or "body". Real JDs put must-haves and nice-to-haves under
+    separate headings, not on the same line as the skill."""
+    blocks: list[tuple[str, str]] = []
+    for block in re.split(r"\n{2,}", jd_text):
+        heading = block.strip().split("\n")[0].strip()
+        if _REQUIRED_HEADING_RE.match(heading):
+            kind = "required"
+        elif _NICE_HEADING_RE.match(heading):
+            kind = "nice"
+        else:
+            kind = "body"
+        blocks.append((kind, block.lower()))
+    return blocks
 
 
 def _keyword_weights(jd_text: str, keywords: list[str]) -> dict[str, float]:
     """Importance of each JD keyword from repetition and surrounding context.
 
-    A keyword mentioned three times near "required" matters more than one
-    mentioned once under "nice to have". Weights multiply each keyword's
-    contribution to the keyword score (matched and missing alike).
+    Context comes from two signals: the heading of the JD block the keyword
+    sits under (Requirements vs Nice-to-have), and required/preferred phrasing
+    on the same line. A keyword mentioned three times under "Requirements"
+    matters far more than one mentioned once under "Bonus points". Weights
+    multiply each keyword's contribution to the keyword score (matched and
+    missing alike).
     """
     norm_text = ont.normalize(jd_text)
     lines = [ln for ln in jd_text.split("\n") if ln.strip()]
+    blocks = _classify_jd_blocks(jd_text)
 
     weights: dict[str, float] = {}
     for kw in keywords:
@@ -420,17 +485,31 @@ def _keyword_weights(jd_text: str, keywords: list[str]) -> dict[str, float]:
         freq = len(re.findall(rf"\b{re.escape(kw_norm)}\b", norm_text)) if kw_norm else 0
         weight = 1.0 + _IMP_FREQ_BONUS * min(max(freq - 1, 0), _IMP_FREQ_CAP)
 
-        in_required = in_nice = False
         kw_lower = kw.lower()
+
+        # Same-line phrasing is the most specific signal ("GraphQL is a plus"
+        # under a Requirements heading is still a nice-to-have).
+        line_required = line_nice = False
         for line in lines:
             if kw_lower in line.lower():
                 if _REQUIRED_CTX_RE.search(line):
-                    in_required = True
+                    line_required = True
                 elif _NICE_CTX_RE.search(line):
-                    in_nice = True
-        if in_required:
+                    line_nice = True
+
+        block_required = block_nice = False
+        for kind, block in blocks:
+            if kind != "body" and kw_lower in block:
+                if kind == "required":
+                    block_required = True
+                else:
+                    block_nice = True
+
+        if line_nice and not line_required:
+            weight *= _IMP_NICE_FACTOR
+        elif line_required or block_required:
             weight *= _IMP_REQUIRED_BOOST
-        elif in_nice:
+        elif block_nice:
             weight *= _IMP_NICE_FACTOR
 
         weights[kw] = round(weight, 3)
@@ -770,6 +849,7 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float, progress) -> 
             matched.append(KeywordMatch(keyword=kw, found_in=found_in, matched_via=via, score=score))
         else:
             missing.append(kw)
+    _apply_stale_discount(matched, resume)
     progress.done(f"{len(matched)} matched · {len(missing)} missing")
 
     progress.step("Computing weighted scores…")
@@ -778,9 +858,42 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float, progress) -> 
         resume, jd_text, jd_title, ontology,
         matched, missing, jd_keywords, kw_weights,
         threshold, backend="spacy",
+        soft_skills=_scan_soft_skills(jd_text, resume),
     )
     progress.done()
     return result
+
+
+def _apply_stale_discount(matched: list[KeywordMatch], resume: ResumeData) -> None:
+    """Discount skills demonstrated only in roles before the current one.
+
+    Real ATS weight recent experience in the required stack more heavily —
+    a skill last used three jobs ago is a weaker signal than one used today.
+    Skills/projects/summary mentions are treated as current.
+    """
+    if not resume.positions:
+        return
+    current = resume.positions[0]
+    recent_norm = {"recent": ont.normalize(f"{current.title} {' '.join(current.items)}")}
+    for m in matched:
+        if m.found_in == ["experience"] and not _direct_sections(ont.normalize(m.keyword), recent_norm):
+            m.score = round(m.score * _STALE_FACTOR, 3)
+            m.stale = True
+
+
+def _scan_soft_skills(jd_text: str, resume: ResumeData) -> list[tuple[str, bool]]:
+    """Soft skills the JD asks for, and whether the resume mentions them.
+
+    Reported for awareness (the way market checkers do) rather than scored —
+    soft-skill keyword presence is a weak signal either way.
+    """
+    jd_lower = jd_text.lower()
+    resume_lower = resume.all_text().lower()
+    return [
+        (skill, skill in resume_lower)
+        for skill in _SOFT_SKILLS
+        if skill in jd_lower
+    ]
 
 
 # Map LLM match types → score values and renderer "matched_via" labels.
@@ -842,6 +955,7 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float, progress) -> JD
         suggestions=analysis.suggestions,
         role_fit=analysis.role_fit,
         bullet_rewrites=bullet_rewrites,
+        soft_skills=_scan_soft_skills(jd_text, resume),
     )
     progress.done()
     return result

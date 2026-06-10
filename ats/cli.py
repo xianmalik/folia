@@ -141,10 +141,11 @@ def main() -> int:
     else:
         term.step("Loading resume data…")
         resume = loader.load()
+        stats = loader.extraction_stats()
         term.done()
 
         term.step("Running ATS health checks…")
-        result = health.run(resume, threshold=args.threshold)
+        result = health.run(resume, threshold=args.threshold, stats=stats)
         term.done()
 
         term.step("Generating report…")

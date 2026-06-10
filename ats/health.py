@@ -29,6 +29,7 @@ _PASS_THRESHOLD         = _C["pass_threshold"]
 _QUANT_RATIO_GOOD       = _C["quant_ratio_good"]
 _QUANT_RATIO_OK         = _C["quant_ratio_ok"]
 _PASSIVE_RATIO_WARN     = _C["passive_ratio_warn"]
+_STUFFING_BULLET_SHARE  = _C["stuffing_bullet_share"]
 
 # ── Quantification detection ─────────────────────────────────────────────────
 # Matches numbers followed by units (%, x, k, ms…), dollar amounts, and N+ forms.
@@ -80,7 +81,9 @@ class HealthResult:
     mode: str = "health"
 
 
-def run(resume: ResumeData | None, threshold: float = _PASS_THRESHOLD) -> HealthResult:
+def run(resume: ResumeData | None, threshold: float = _PASS_THRESHOLD, stats=None) -> HealthResult:
+    """Score the resume. Pass loader.extraction_stats() as *stats* to include
+    the PDF parseability check (omitted when scoring parsed data alone)."""
     if resume is None:
         raise ValueError("resume must not be None")
     checks = [
@@ -93,6 +96,9 @@ def run(resume: ResumeData | None, threshold: float = _PASS_THRESHOLD) -> Health
         _check_quantification(resume),
         _check_grammar(resume),
     ]
+    if stats is not None:
+        from . import parseability  # deferred: parseability imports CheckResult from here
+        checks.append(parseability.check(stats))
     raw = sum(c.score for c in checks)
     max_raw = sum(c.max_score for c in checks)
     total = round((raw / max_raw) * 100, 1) if max_raw else 0.0
@@ -220,9 +226,42 @@ def _check_bullets(resume: ResumeData) -> CheckResult:
         findings.append(f"Average bullet length {avg_words:.0f} words (target: ≥{_MIN_BULLET_WORDS})")
     if verb_score < 5.0:
         findings.append(f"Action verbs in {action_ratio:.0%} of bullets (target: ≥{_ACTION_VERB_RATIO_GOOD:.0%})")
+
+    # (d) keyword stuffing — one tech term dominating the bullets reads as
+    # gaming the match and gets resumes rejected by reviewers
+    stuffed = _detect_stuffing(all_items)
+    if stuffed:
+        term_name, hit_count = stuffed
+        score = max(0.0, score - 2.0)
+        findings.append(
+            f"Possible keyword stuffing: '{term_name}' appears in {hit_count} of "
+            f"{len(all_items)} bullets — vary the phrasing"
+        )
+
     if not findings:
         findings = [f"{len(all_items)} bullets across {len(positions)} roles — strong"]
     return CheckResult("bullet_quality", "Bullet Quality", score, 20.0, findings)
+
+
+def _detect_stuffing(bullets: list[str]) -> tuple[str, int] | None:
+    """Return (term, bullet_count) when a single tech term saturates the bullets."""
+    from . import ontology as ont
+
+    if len(bullets) < 6:
+        return None
+    ontology = ont.load_ontology()
+    tech_terms = set(ontology.get("implies", {})) | set(ontology.get("aliases", {}).values())
+
+    bullets_norm = [ont.normalize(b) for b in bullets]
+    worst: tuple[str, int] | None = None
+    for term in tech_terms:
+        n = ont.normalize(term)
+        if not n:
+            continue
+        hits = sum(1 for b in bullets_norm if re.search(rf"\b{re.escape(n)}\b", b))
+        if hits / len(bullets) > _STUFFING_BULLET_SHARE and (worst is None or hits > worst[1]):
+            worst = (term, hits)
+    return worst
 
 
 def _check_skills(resume: ResumeData) -> CheckResult:
