@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+from ats import jd_matcher as jm
+from ats import ontology as ont
+from ats.loader import Position
+
+
+# ── title extraction ─────────────────────────────────────────────────────────
+
+def test_extract_title_from_heading():
+    jd = "Senior Software Engineer\n\nWe are a fast-growing startup..."
+    assert jm._extract_jd_title(jd) == "Senior Software Engineer"
+
+
+def test_extract_title_from_hiring_sentence():
+    jd = "About us\nOur team ships daily.\nWe are looking for a Backend Developer to join us."
+    assert "Backend Developer" in jm._extract_jd_title(jd)
+
+
+# ── keyword scoring ──────────────────────────────────────────────────────────
+
+def _sections(**kwargs) -> dict[str, str]:
+    base = {"summary": "", "experience": "", "projects": "", "skills": "", "education": ""}
+    base.update(kwargs)
+    return base
+
+
+def test_direct_match_is_whole_word():
+    sections = _sections(skills="JavaScript React")
+    score, found_in, via = jm._score_keyword("Java", sections, set(), [])
+    # "java" must NOT match inside "javascript"
+    assert score == 0.0 and via == "none"
+
+    score, found_in, via = jm._score_keyword("JavaScript", sections, set(), [])
+    assert score == jm._KW_SCORE_DIRECT
+    assert via == "direct"
+    assert found_in == ["skills"]
+
+
+def test_ontology_match():
+    expanded = {ont.normalize("JSX")}
+    score, found_in, via = jm._score_keyword("JSX", _sections(), expanded, [])
+    assert score == jm._KW_SCORE_ONTOLOGY
+    assert via == "ontology"
+
+
+def test_fuzzy_match_against_skill_items():
+    score, found_in, via = jm._score_keyword(
+        "PostgreSQL", _sections(), set(), ["Postgres"]
+    )
+    assert via in ("fuzzy", "none")  # rapidfuzz optional
+    if via == "fuzzy":
+        assert score == jm._KW_SCORE_FUZZY
+
+
+# ── title scoring ────────────────────────────────────────────────────────────
+
+def test_title_score_exact_role_match():
+    positions = [Position("Senior Software Engineer", "Acme", "", "2020 - Present", [])]
+    score = jm._title_score("Senior Software Engineer", positions)
+    assert score == 100.0
+
+
+def test_title_score_synonym_normalisation():
+    positions = [Position("Software Developer", "Acme", "", "2020 - Present", [])]
+    # "engineer" and "developer" normalise to the same canonical token
+    score = jm._title_score("Software Engineer", positions)
+    assert score == 100.0
+
+
+def test_title_score_neutral_when_no_title():
+    assert jm._title_score("", []) == 50.0
+
+
+# ── section noise stripping ──────────────────────────────────────────────────
+
+def test_strip_nontechnical_sections():
+    jd = "Requirements\nPython, Django\n\nBenefits\nFree lunch and gym membership"
+    cleaned = jm._strip_nontechnical_sections(jd)
+    assert "Python" in cleaned
+    assert "Free lunch" not in cleaned
+
+
+# ── education scoring ────────────────────────────────────────────────────────
+
+def test_education_meets_requirement(sample_resume):
+    ontology = ont.load_ontology()
+    jd = "Requirements: Bachelor degree in Computer Science required."
+    score, gap = jm._education_score(sample_resume, jd, ontology)
+    assert gap is not None and gap.matched
+    assert score >= 100.0
+
+
+def test_education_below_requirement(sample_resume):
+    ontology = ont.load_ontology()
+    jd = "Requirements: PhD in Computer Science required."
+    score, gap = jm._education_score(sample_resume, jd, ontology)
+    assert gap is not None and not gap.matched
+    assert score < 60.0
+
+
+def test_education_flexible_or_requirement(sample_resume):
+    ontology = ont.load_ontology()
+    jd = "A Bachelor or Master degree in a related field."
+    score, gap = jm._education_score(sample_resume, jd, ontology)
+    assert gap is not None and gap.matched
+    # Meets the minimum of a flexible range → small penalty at most
+    assert score >= 85.0
+
+
+def test_education_no_jd_requirement(sample_resume):
+    ontology = ont.load_ontology()
+    score, gap = jm._education_score(sample_resume, "No degree mentioned here.", ontology)
+    assert gap is None
+    assert score > 0
+
+
+# ── experience scoring ───────────────────────────────────────────────────────
+
+def test_experience_meets_explicit_requirement(sample_resume):
+    score, years = jm._experience_score(sample_resume, "5+ years of experience required")
+    assert years > 5
+    assert score == 100.0
+
+
+def test_experience_far_below_requirement(sample_resume):
+    score, _ = jm._experience_score(sample_resume, "20 years of experience required")
+    assert score < 100.0

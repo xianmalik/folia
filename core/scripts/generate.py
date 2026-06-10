@@ -12,16 +12,12 @@ from pathlib import Path
 try:
     import yaml  # type: ignore
 except ImportError:
-    print("generate.py: PyYAML not installed — skipping generation", file=sys.stderr)
-    sys.exit(0)
+    yaml = None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = REPO_ROOT / "core"
 DATA_DIR = REPO_ROOT / "source"
 SECTIONS_DIR = CORE_DIR / "sections"
-
-if not DATA_DIR.exists() or not SECTIONS_DIR.exists():
-    sys.exit(0)
 
 
 def read_yaml(filename: str) -> dict | None:
@@ -216,7 +212,7 @@ def gen_languages(data: dict | None) -> str | None:
     )
 
 
-outputs = {
+OUTPUTS = {
     "00-summary.tex":   (gen_summary,    "00-summary.yml"),
     "10-experience.tex": (gen_experience, "10-experience.yml"),
     "20-projects.tex":  (gen_projects,   "20-projects.yml"),
@@ -225,12 +221,23 @@ outputs = {
     "50-languages.tex": (gen_languages,  "50-languages.yml"),
 }
 
-for tex_file, (gen_fn, yml_file) in outputs.items():
-    data = read_yaml(yml_file)
-    content = gen_fn(data)
-    if content:
-        write_file(SECTIONS_DIR / tex_file, content)
-    elif data is not None:
-        print(f"generate.py: {yml_file} loaded but produced no output — check required fields", file=sys.stderr)
 
-sys.exit(0)
+def main() -> int:
+    if yaml is None:
+        print("generate.py: PyYAML not installed — skipping generation", file=sys.stderr)
+        return 0
+    if not DATA_DIR.exists() or not SECTIONS_DIR.exists():
+        return 0
+
+    for tex_file, (gen_fn, yml_file) in OUTPUTS.items():
+        data = read_yaml(yml_file)
+        content = gen_fn(data)
+        if content:
+            write_file(SECTIONS_DIR / tex_file, content)
+        elif data is not None:
+            print(f"generate.py: {yml_file} loaded but produced no output — check required fields", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

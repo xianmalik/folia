@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Validate source/*.yml files against expected schemas.
-Exits non-zero on the first validation error.
+Exits non-zero if any validation error is found.
 """
 from __future__ import annotations
 
@@ -11,8 +11,7 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:
-    print("PyYAML not installed. Run: pip install -r requirements.txt")
-    sys.exit(1)
+    yaml = None
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = REPO_ROOT / "source"
@@ -22,11 +21,9 @@ GREEN = "\033[0;32m"
 YELLOW = "\033[1;33m"
 NC = "\033[0m"
 
-errors: list[str] = []
 
-
-def load(filename: str) -> dict | None:
-    path = DATA_DIR / filename
+def load(filename: str, errors: list[str], data_dir: Path = DATA_DIR) -> dict | None:
+    path = data_dir / filename
     if not path.exists():
         return None
     try:
@@ -36,7 +33,13 @@ def load(filename: str) -> dict | None:
         return None
 
 
-def require_list(data: dict | None, filename: str, key: str, item_keys: list[str]) -> None:
+def require_list(
+    data: dict | None,
+    filename: str,
+    key: str,
+    item_keys: list[str],
+    errors: list[str],
+) -> None:
     if data is None:
         return
     items = data.get(key)
@@ -49,41 +52,53 @@ def require_list(data: dict | None, filename: str, key: str, item_keys: list[str
                 errors.append(f"{filename}: {key}[{i}] missing required field '{k}'")
 
 
-# 00-summary.yml
-summary = load("00-summary.yml")
-if summary is not None and not summary.get("summary"):
-    errors.append("00-summary.yml: missing required field 'summary'")
+def collect_errors(data_dir: Path = DATA_DIR) -> list[str]:
+    """Validate every source YAML file; return all errors found."""
+    errors: list[str] = []
 
-# 10-experience.yml
-experience = load("10-experience.yml")
-require_list(experience, "10-experience.yml", "positions",
-             ["title", "company", "location", "dates"])
-if experience and isinstance(experience.get("internships"), list):
-    require_list(experience, "10-experience.yml", "internships",
-                 ["title", "company", "location", "dates"])
+    summary = load("00-summary.yml", errors, data_dir)
+    if summary is not None and not summary.get("summary"):
+        errors.append("00-summary.yml: missing required field 'summary'")
 
-# 20-projects.yml
-projects = load("20-projects.yml")
-require_list(projects, "20-projects.yml", "projects", ["name", "subtitle", "items", "tech"])
+    experience = load("10-experience.yml", errors, data_dir)
+    require_list(experience, "10-experience.yml", "positions",
+                 ["title", "company", "location", "dates"], errors)
+    if experience and isinstance(experience.get("internships"), list):
+        require_list(experience, "10-experience.yml", "internships",
+                     ["title", "company", "location", "dates"], errors)
 
-# 30-skills.yml
-skills = load("30-skills.yml")
-require_list(skills, "30-skills.yml", "skills", ["category", "items"])
+    projects = load("20-projects.yml", errors, data_dir)
+    require_list(projects, "20-projects.yml", "projects",
+                 ["name", "subtitle", "items", "tech"], errors)
 
-# 40-education.yml
-education = load("40-education.yml")
-require_list(education, "40-education.yml", "schools",
-             ["degree", "institution", "location", "dates"])
+    skills = load("30-skills.yml", errors, data_dir)
+    require_list(skills, "30-skills.yml", "skills", ["category", "items"], errors)
 
-# 50-languages.yml
-languages = load("50-languages.yml")
-require_list(languages, "50-languages.yml", "languages", ["name", "level"])
+    education = load("40-education.yml", errors, data_dir)
+    require_list(education, "40-education.yml", "schools",
+                 ["degree", "institution", "location", "dates"], errors)
 
-if errors:
-    print(f"{RED}Validation failed:{NC}")
-    for e in errors:
-        print(f"  {YELLOW}✗{NC} {e}")
-    sys.exit(1)
+    languages = load("50-languages.yml", errors, data_dir)
+    require_list(languages, "50-languages.yml", "languages", ["name", "level"], errors)
 
-print(f"{GREEN}✓ All data files valid{NC}")
-sys.exit(0)
+    return errors
+
+
+def main() -> int:
+    if yaml is None:
+        print("PyYAML not installed. Run: pip install -r requirements.txt")
+        return 1
+
+    errors = collect_errors()
+    if errors:
+        print(f"{RED}Validation failed:{NC}")
+        for e in errors:
+            print(f"  {YELLOW}✗{NC} {e}")
+        return 1
+
+    print(f"{GREEN}✓ All data files valid{NC}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

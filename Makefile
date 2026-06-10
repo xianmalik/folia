@@ -46,6 +46,9 @@ test: deps
 	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/validate.py
 	@echo "Running generator smoke test..."
 	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/generate.py
+	@echo "Running unit tests..."
+	@$(PY) -c "import pytest" >/dev/null 2>&1 || $(PIP) install -q pytest
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) -m pytest tests/ -q
 	@echo "All checks passed."
 
 release: deps
