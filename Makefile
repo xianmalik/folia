@@ -4,12 +4,11 @@
 # Auto-load .env if it exists and export its variables to subprocesses.
 # Format: KEY=value (one per line, # for comments — no quotes, no 'export' prefix).
 -include .env
-export CEREBRAS_API_KEY
 export GROQ_API_KEY
 
 .PHONY: build watch open clean deps venv lint format test release docker-build ats ats-deps
 
-BUILD_SCRIPT := ./scripts/build.py
+BUILD_SCRIPT := ./core/scripts/build.py
 PDF := dist/resume.pdf
 VENV_DIR := .venv
 PY := $(VENV_DIR)/bin/python3
@@ -27,26 +26,26 @@ venv:
 	@$(PIP) -q install --upgrade pip
 
 watch: deps
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) ./scripts/watch.py
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) ./core/scripts/watch.py
 
 open: build
 	@([ -f $(PDF) ] && open $(PDF)) || { echo "$(PDF) not found"; exit 1; }
 
 clean:
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) ./scripts/clean.py
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) ./core/scripts/clean.py
 
 lint: deps
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/validate.py
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/validate.py
 
 format: deps
 	@$(PIP) -q install black 2>/dev/null; \
-	 PATH="$(VENV_DIR)/bin:$$PATH" $(VENV_DIR)/bin/black scripts/
+	 PATH="$(VENV_DIR)/bin:$$PATH" $(VENV_DIR)/bin/black core/scripts/
 
 test: deps
 	@echo "Running YAML validation..."
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/validate.py
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/validate.py
 	@echo "Running generator smoke test..."
-	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/generate.py
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/generate.py
 	@echo "All checks passed."
 
 release: deps
@@ -79,7 +78,7 @@ ats-deps: deps
 #   GROQ_API_KEY not set      →  NLP  (run `make ats-deps` first)
 #
 # Override flags still work directly via Python if needed:
-#   .venv/bin/python3 scripts/ats_check.py --jd jd.txt --no-groq
+#   .venv/bin/python3 core/scripts/ats_check.py --jd jd.txt --no-groq
 # ────────────────────────────────────────────────────────────────────────────
 
 # Coalesce JD and jd into a single variable (whichever was passed).
@@ -87,7 +86,7 @@ _JD := $(or $(JD),$(jd))
 
 ats: deps
 	@if [ -n "$(_JD)" ]; then \
-		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py --jd "$(_JD)"; \
+		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/ats_check.py --jd "$(_JD)"; \
 	else \
-		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) scripts/ats_check.py; \
+		PATH="$(VENV_DIR)/bin:$$PATH" $(PY) core/scripts/ats_check.py; \
 	fi

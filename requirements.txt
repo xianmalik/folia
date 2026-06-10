@@ -4,4 +4,3 @@ spacy>=3.7
 rapidfuzz>=3.0
 groq>=0.9
 pypdf>=3.0
-cerebras-cloud-sdk>=1.0

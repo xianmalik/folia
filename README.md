@@ -29,7 +29,7 @@
 
 <p align="center">
     <h2 align="center">Quick Start</h2>
-    <small>Data-driven CV: edit YAML in <code>data/</code>, then build.</small>
+    <small>Data-driven CV: edit YAML in <code>source/</code>, then build.</small>
 </p>
 
 ```bash
@@ -44,11 +44,11 @@ python3 -m pip install -r requirements.txt
 #   macOS (MacTeX):   brew install --cask mactex # or install from tug.org
 #   Linux (TeX Live): sudo apt-get install texlive-xetex texlive-fonts-recommended
 
-# 4) Build the PDF (generates cv/*.tex from data/*.yml, then compiles)
-python3 scripts/build.py
+# 4) Build the PDF (generates core/sections/*.tex from source/*.yml, then compiles)
+python3 core/scripts/build.py
 
 # Optional
-python3 scripts/clean.py    # remove auxiliary files
+python3 core/scripts/clean.py    # remove auxiliary files
 ```
 
 <p align="center">
@@ -56,42 +56,45 @@ python3 scripts/clean.py    # remove auxiliary files
 </p>
 
 ```
-├── sections/                # GENERATED TeX sections (do not edit)
-│   ├── 00-summary.tex
-│   ├── 10-experience.tex
-│   ├── 20-projects.tex
-│   ├── 30-skills.tex
-│   ├── 40-education.tex
-│   └── 50-languages.tex
-├── data/                    # Source data (edit these)
+├── source/                  # Source data (edit these)
 │   ├── 00-summary.yml
 │   ├── 10-experience.yml
 │   ├── 20-projects.yml
 │   ├── 30-skills.yml
 │   ├── 40-education.yml
 │   └── 50-languages.yml
-├── core/                    # Modular LaTeX class partials
-│   ├── fonts.tex
-│   ├── layout.tex
-│   ├── colors.tex
-│   ├── styles.tex
-│   ├── commands.tex
-│   └── structure.tex
-├── font/                    # Inter fonts
+├── core/                    # Everything needed to build the CV
+│   ├── resume.tex           # Main LaTeX file
+│   ├── xianmalik.cls        # Custom CV class (loads core/partials/)
+│   ├── scripts/             # Build & generator scripts
+│   ├── sections/            # GENERATED TeX sections (do not edit)
+│   │   ├── 00-summary.tex
+│   │   ├── 10-experience.tex
+│   │   ├── 20-projects.tex
+│   │   ├── 30-skills.tex
+│   │   ├── 40-education.tex
+│   │   └── 50-languages.tex
+│   ├── partials/            # Modular LaTeX class partials
+│   │   ├── fonts.tex
+│   │   ├── layout.tex
+│   │   ├── colors.tex
+│   │   ├── styles.tex
+│   │   ├── commands.tex
+│   │   └── structure.tex
+│   └── font/                # Inter & Font Awesome fonts
+├── ats/                     # ATS health-check & JD-matching package
+├── docs/                    # CUSTOMIZATION.md, TODO.md
 ├── dist/                    # Built PDF output
-├── scripts/                 # Build & generator scripts
-├── requirements.txt         # Python deps (PyYAML, watchdog)
-├── resume.tex               # Main LaTeX file
-└── xianmalik.cls            # Custom CV class (loads core/)
+└── requirements.txt         # Python deps (PyYAML, watchdog)
 ```
 
 <p align="center">
     <h2 align="center">Features</h2>
 </p>
 
-- **Data-driven**: Update YAML in `data/`, not TeX
+- **Data-driven**: Update YAML in `source/`, not TeX
 - **Clean design**: Minimal, readable Inter font setup
-- **One-command build**: `python3 scripts/build.py`
+- **One-command build**: `python3 core/scripts/build.py`
 - **Safe generation**: Fails fast if data or PyYAML/XeLaTeX are missing
 
 <p align="center">
@@ -107,17 +110,17 @@ python3 scripts/clean.py    # remove auxiliary files
     <h2 align="center">Usage</h2>
 </p>
 
-1) Edit your data only (do not edit `sections/*.tex`)
-   - `data/00-summary.yml`
-   - `data/10-experience.yml`
-   - `data/20-projects.yml`
-   - `data/30-skills.yml`
-   - `data/40-education.yml`
-   - `data/50-languages.yml`
+1) Edit your data only (do not edit `core/sections/*.tex`)
+   - `source/00-summary.yml`
+   - `source/10-experience.yml`
+   - `source/20-projects.yml`
+   - `source/30-skills.yml`
+   - `source/40-education.yml`
+   - `source/50-languages.yml`
 
 2) Build
 ```bash
-python3 scripts/build.py
+python3 core/scripts/build.py
 ```
 
 3) Output
@@ -146,11 +149,12 @@ The PDF will be written to `dist/resume.pdf` on your host.
     <h2 align="center">Customization</h2>
 </p>
 
-- **Colors**: Edit `core/colors.tex` — change `accentcolor`, text colors, or the section highlight toggle
-- **Fonts**: Edit `core/fonts.tex` — swap font weights or replace Inter
-- **Layout**: Edit `core/layout.tex` — adjust margins and header/footer setup, or override in `resume.tex`
-- **Styles**: Edit `core/styles.tex` — tweak font sizes for headers, entries, and skills
-- **Content**: Edit YAML in `data/` (generator writes `sections/*.tex`)
+- **Colors**: Edit `core/partials/colors.tex` — change `accentcolor`, text colors, or the section highlight toggle
+- **Fonts**: Edit `core/partials/fonts.tex` — swap font weights or replace Inter
+- **Layout**: Edit `core/partials/layout.tex` — adjust margins and header/footer setup, or override in `core/resume.tex`
+- **Styles**: Edit `core/partials/styles.tex` — tweak font sizes for headers, entries, and skills
+- **Content**: Edit YAML in `source/` (generator writes `core/sections/*.tex`)
+- See [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md) for the full customization guide
 
 <p align="center">
     <h2 align="center">License</h2>

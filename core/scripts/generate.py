@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Minimal YAML → TeX generator. Reads data/*.yml and writes sections/*.tex.
-No-op if data directory or files are missing, or if PyYAML is unavailable.
+Minimal YAML → TeX generator. Reads source/*.yml and writes core/sections/*.tex.
+No-op if source directory or files are missing, or if PyYAML is unavailable.
 """
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ except ImportError:
     print("generate.py: PyYAML not installed — skipping generation", file=sys.stderr)
     sys.exit(0)
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPO_ROOT / "data"
-SECTIONS_DIR = REPO_ROOT / "sections"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CORE_DIR = REPO_ROOT / "core"
+DATA_DIR = REPO_ROOT / "source"
+SECTIONS_DIR = CORE_DIR / "sections"
 
 if not DATA_DIR.exists() or not SECTIONS_DIR.exists():
     sys.exit(0)

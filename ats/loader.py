@@ -14,8 +14,8 @@ except ImportError:
     sys.exit(1)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPO_ROOT / "data"
-RESUME_TEX = REPO_ROOT / "resume.tex"
+DATA_DIR = REPO_ROOT / "source"
+RESUME_TEX = REPO_ROOT / "core" / "resume.tex"
 
 _BOLD_RE = re.compile(r"\[\[(.+?)\]\]")
 
@@ -151,8 +151,8 @@ def _parse_position(raw: dict) -> Position:
 
 
 def load(repo_root: Path | None = None) -> ResumeData:
-    data_dir = (repo_root or REPO_ROOT) / "data"
-    tex_path = (repo_root or REPO_ROOT) / "resume.tex"
+    data_dir = (repo_root or REPO_ROOT) / "source"
+    tex_path = (repo_root or REPO_ROOT) / "core" / "resume.tex"
 
     resume = ResumeData(contact=_parse_contact(tex_path))
 

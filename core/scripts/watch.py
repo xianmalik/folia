@@ -19,20 +19,22 @@ RED = "\033[0;31m"
 WHITE = "\033[1;37m"
 NC = "\033[0m"
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CORE_DIR = REPO_ROOT / "core"
+SCRIPTS_DIR = CORE_DIR / "scripts"
 
 WATCHED_FILES = {
-    REPO_ROOT / "resume.tex",
-    REPO_ROOT / "xianmalik.cls",
+    CORE_DIR / "resume.tex",
+    CORE_DIR / "xianmalik.cls",
 }
-WATCHED_DIRS = {REPO_ROOT / "data"}
+WATCHED_DIRS = {REPO_ROOT / "source", CORE_DIR / "partials"}
 
 
 def run_build() -> None:
     ts = datetime.now().strftime("%H:%M:%S")
     print(f"\n{YELLOW}[{ts}] File changed, rebuilding...{NC}")
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "build.py")],
+        [sys.executable, str(SCRIPTS_DIR / "build.py")],
         check=False,
     )
     if result.returncode == 0:
@@ -56,7 +58,7 @@ class ResumeHandler(FileSystemEventHandler):
             run_build()
             return
         for d in WATCHED_DIRS:
-            if path.is_relative_to(d) and path.suffix == ".yml":
+            if path.is_relative_to(d) and path.suffix in (".yml", ".tex"):
                 run_build()
                 return
 
@@ -64,24 +66,26 @@ class ResumeHandler(FileSystemEventHandler):
 def main() -> int:
     print("Running initial build...")
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "build.py")],
+        [sys.executable, str(SCRIPTS_DIR / "build.py")],
         check=False,
     )
     if result.returncode != 0:
         print(f"{RED}✗ Initial build failed{NC}")
 
     print("")
-    print("Watching: resume.tex, xianmalik.cls, and data/*.yml ...")
+    print("Watching: core/resume.tex, core/xianmalik.cls, core/partials/*.tex, and source/*.yml ...")
     print("Will automatically rebuild when files are saved")
     print("Press Ctrl+C to stop watching\n")
 
     handler = ResumeHandler()
     observer = Observer()
 
-    # Watch the repo root non-recursively for top-level files
-    observer.schedule(handler, str(REPO_ROOT), recursive=False)
-    # Watch data/ recursively for YAML changes
-    observer.schedule(handler, str(REPO_ROOT / "data"), recursive=True)
+    # Watch core/ non-recursively for resume.tex and xianmalik.cls
+    observer.schedule(handler, str(CORE_DIR), recursive=False)
+    # Watch source/ recursively for YAML changes
+    observer.schedule(handler, str(REPO_ROOT / "source"), recursive=True)
+    # Watch core/partials/ recursively for LaTeX class partial changes
+    observer.schedule(handler, str(CORE_DIR / "partials"), recursive=True)
 
     observer.start()
     try:

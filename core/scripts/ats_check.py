@@ -2,15 +2,15 @@
 """
 ATS checker for folia resumes.
 
-Reads resume content directly from data/*.yml (no PDF extraction needed)
+Reads resume content directly from source/*.yml (no PDF extraction needed)
 and scores it either as a standalone CV health check or against a job description.
 If GROQ_API_KEY is set, the LLM backend is used automatically for JD matching.
 
 Usage:
-  python3 scripts/ats_check.py                         # CV health check
-  python3 scripts/ats_check.py --jd jd.txt             # JD match (LLM if key set, else NLP)
-  python3 scripts/ats_check.py --jd -                  # JD from stdin
-  python3 scripts/ats_check.py --jd jd.txt --no-llm   # force NLP backend
+  python3 core/scripts/ats_check.py                         # CV health check
+  python3 core/scripts/ats_check.py --jd jd.txt             # JD match (LLM if key set, else NLP)
+  python3 core/scripts/ats_check.py --jd -                  # JD from stdin
+  python3 core/scripts/ats_check.py --jd jd.txt --no-llm   # force NLP backend
   make ats                                              # via Makefile
   make ats JD=jd.txt                                   # via Makefile with JD
 """
@@ -20,7 +20,7 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from ats import pdf_loader, health, renderer  # noqa: E402
 from ats.llm_analyzer import RateLimitError  # noqa: E402
@@ -37,10 +37,10 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 scripts/ats_check.py                             # CV health check\n"
-            "  python3 scripts/ats_check.py --jd jd.txt                # JD match (auto LLM if key set)\n"
-            "  cat jd.txt | python3 scripts/ats_check.py --jd -        # JD from stdin\n"
-            "  python3 scripts/ats_check.py --jd jd.txt --no-llm      # force NLP backend\n"
+            "  python3 core/scripts/ats_check.py                             # CV health check\n"
+            "  python3 core/scripts/ats_check.py --jd jd.txt                # JD match (auto LLM if key set)\n"
+            "  cat jd.txt | python3 core/scripts/ats_check.py --jd -        # JD from stdin\n"
+            "  python3 core/scripts/ats_check.py --jd jd.txt --no-llm      # force NLP backend\n"
             "  make ats                                                  # health check\n"
             "  make ats JD=jd.txt                                       # JD match (auto LLM if key set)"
         ),

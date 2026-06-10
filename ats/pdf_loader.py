@@ -381,7 +381,7 @@ def ensure_pdf(pdf_path: Path = PDF_PATH) -> None:
     """Build the PDF if it doesn't exist yet."""
     if pdf_path.exists():
         return
-    build_script = REPO_ROOT / "scripts" / "build.py"
+    build_script = REPO_ROOT / "core" / "scripts" / "build.py"
     print(f"  PDF not found — running build first…", flush=True)
     result = subprocess.run(
         [sys.executable, str(build_script)],

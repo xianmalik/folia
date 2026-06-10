@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Validate data/*.yml files against expected schemas.
+Validate source/*.yml files against expected schemas.
 Exits non-zero on the first validation error.
 """
 from __future__ import annotations
@@ -14,8 +14,8 @@ except ImportError:
     print("PyYAML not installed. Run: pip install -r requirements.txt")
     sys.exit(1)
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPO_ROOT / "data"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = REPO_ROOT / "source"
 
 RED = "\033[0;31m"
 GREEN = "\033[0;32m"

@@ -18,10 +18,10 @@ jobs:
         uses: ./.github/actions/setup-latex
 
       - name: Lint YAML data files
-        run: python3 scripts/validate.py
+        run: python3 core/scripts/validate.py
 
       - name: Build resume
-        run: python3 scripts/build.py
+        run: python3 core/scripts/build.py
 
       - name: Upload PDF artifact
         uses: actions/upload-artifact@v4

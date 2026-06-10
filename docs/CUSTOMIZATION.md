@@ -1,12 +1,12 @@
 # Customization Guide
 
-All visual styling lives in `core/`. Edit the relevant file and run `make build` to see the result.
+All visual styling lives in `core/partials/`. Edit the relevant file and run `make build` to see the result.
 
 ---
 
 ## Accent color
 
-Edit `core/colors.tex`:
+Edit `core/partials/colors.tex`:
 
 ```latex
 \definecolor{accentcolor}{HTML}{DC3522}  % change this hex
@@ -18,7 +18,7 @@ To disable the colored section titles entirely:
 \setbool{acvSectionColorHighlight}{false}
 ```
 
-Or set it per-document in `resume.tex`:
+Or set it per-document in `core/resume.tex`:
 
 ```latex
 \setbool{acvSectionColorHighlight}{false}
@@ -28,7 +28,7 @@ Or set it per-document in `resume.tex`:
 
 ## Text colors
 
-Also in `core/colors.tex`. The palette maps logical names to hex colors:
+Also in `core/partials/colors.tex`. The palette maps logical names to hex colors:
 
 | Name            | Used for                        |
 |-----------------|---------------------------------|
@@ -42,7 +42,7 @@ Also in `core/colors.tex`. The palette maps logical names to hex colors:
 
 ## Fonts and weights
 
-Edit `core/fonts.tex`. Inter is loaded as a variable font — weights are set via `RawFeature`:
+Edit `core/partials/fonts.tex`. Inter is loaded as a variable font — weights are set via `RawFeature`:
 
 ```latex
 \newcommand*{\headerfont}{\fontspec{Inter}[RawFeature = {+wght=700}]}
@@ -52,19 +52,19 @@ Edit `core/fonts.tex`. Inter is loaded as a variable font — weights are set vi
 
 Common weight values: `100` thin · `300` light · `400` regular · `500` medium · `700` bold · `900` black.
 
-To use a different font, place the `.ttf` or `.otf` file in `font/` and update the `\setmainfont` block and `\fontspec` calls.
+To use a different font, place the `.ttf` or `.otf` file in `core/font/` and update the `\setmainfont` block and `\fontspec` calls.
 
 ---
 
 ## Page margins
 
-Edit `core/layout.tex`:
+Edit `core/partials/layout.tex`:
 
 ```latex
 \geometry{left=2.0cm, top=1.5cm, right=2.0cm, bottom=2.0cm, footskip=.5cm}
 ```
 
-Or override per-document in `resume.tex` (already done for tighter margins):
+Or override per-document in `core/resume.tex` (already done for tighter margins):
 
 ```latex
 \geometry{left=1.4cm, top=.8cm, right=1.4cm, bottom=1.8cm, footskip=.5cm}
@@ -74,7 +74,7 @@ Or override per-document in `resume.tex` (already done for tighter margins):
 
 ## Font sizes for sections and entries
 
-Edit `core/styles.tex`. Each element has its own style command:
+Edit `core/partials/styles.tex`. Each element has its own style command:
 
 ```latex
 \newcommand*{\entrytitlestyle}[1]{{\fontsize{12pt}{1em}\headerfont\color{darktext} #1}}
@@ -86,7 +86,7 @@ Edit `core/styles.tex`. Each element has its own style command:
 
 ## Section spacing
 
-Edit `core/commands.tex`:
+Edit `core/partials/commands.tex`:
 
 ```latex
 \newcommand{\acvSectionTopSkip}{3mm}        % space above each section title
@@ -97,7 +97,7 @@ Edit `core/commands.tex`:
 
 ## Reordering or hiding sections
 
-Edit `resume.tex`. Comment out a section to hide it; reorder the `\input` lines to change display order:
+Edit `core/resume.tex`. Comment out a section to hide it; reorder the `\input` lines to change display order:
 
 ```latex
 \input{sections/00-summary.tex}
