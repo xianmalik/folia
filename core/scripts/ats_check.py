@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from ats import llm_analyzer, pdf_loader, health, renderer, term  # noqa: E402
+from ats import health, llm_analyzer, loader, renderer, term  # noqa: E402
 from ats.llm_analyzer import RateLimitError  # noqa: E402
 
 
@@ -98,13 +98,13 @@ def _resolve_llm(args) -> bool:
 def main() -> int:
     args = _parse_args()
 
-    pdf_loader.ensure_pdf()
+    loader.ensure_pdf()
 
     if args.jd is not None:
         from ats import jd_matcher
 
         term.step("Loading resume data…")
-        resume = pdf_loader.load()
+        resume = loader.load()
         term.done()
 
         renderer.render_jd_header(
@@ -143,7 +143,7 @@ def main() -> int:
         print()
     else:
         term.step("Loading resume data…")
-        resume = pdf_loader.load()
+        resume = loader.load()
         term.done()
 
         term.step("Running ATS health checks…")

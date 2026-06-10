@@ -13,7 +13,7 @@ except ImportError:
     _HAS_GROQ = False
 
 from . import config as _cfg
-from .loader import ResumeData
+from .models import ResumeData
 
 _LC                  = _cfg.get().get("llm", {})
 _GROQ_MODEL          = _LC.get("groq_model",          "openai/gpt-oss-120b")

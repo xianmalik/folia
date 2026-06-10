@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ats import jd_matcher as jm
 from ats import ontology as ont
-from ats.loader import Position
+from ats.models import Position
 
 
 # ── title extraction ─────────────────────────────────────────────────────────

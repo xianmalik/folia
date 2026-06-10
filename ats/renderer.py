@@ -145,7 +145,7 @@ def render_jd_header(author: str = "", email: str = "", no_color: bool = False) 
 def _render_jd(result, use_color: bool) -> None:
     c = lambda code: _c(code, use_color)
 
-    if getattr(result, "llm_fallback", False):
+    if result.llm_fallback:
         print(f"  {c(YELLOW)}⚠  LLM rate limit hit — results based on local NLP analysis (less accurate){c(NC)}")
         print()
 
@@ -181,7 +181,7 @@ def _render_jd(result, use_color: bool) -> None:
     print(f"  {c(GRAY)}Experience detected:{c(NC)} {c(WHITE)}{result.years_detected:.1f} years{c(NC)}")
     print(f"  {c(GRAY)}Keywords extracted from JD:{c(NC)} {c(WHITE)}{result.jd_keyword_count}{c(NC)} · matched: {c(GREEN)}{len(result.matched_keywords)}{c(NC)} · missing: {c(RED)}{len(result.missing_keywords)}{c(NC)}")
 
-    g = getattr(result, "edu_gap", None)
+    g = result.edu_gap
     if g:
         resume_label = f"{g.resume_level.upper()}"
         if g.resume_field:
@@ -239,7 +239,7 @@ def _render_jd(result, use_color: bool) -> None:
         _box.rule(GRAY, c)
         print()
 
-    keyword_density = getattr(result, "keyword_density", {})
+    keyword_density = result.keyword_density
     if keyword_density:
         total_hits = sum(keyword_density.values())
         _SECTION_ORDER = ["experience", "skills", "projects", "summary", "education"]
@@ -257,10 +257,10 @@ def _render_jd(result, use_color: bool) -> None:
             print(f"  {section.capitalize().ljust(label_w2)}  {c(col2)}{bar2}{c(NC)}  {str(hits).rjust(2)} hits  {pct.rjust(4)}")
         print()
 
-    backend = getattr(result, "backend", "spacy")
-    role_fit = getattr(result, "role_fit", "") if backend == "llm" else ""
-    suggestions = getattr(result, "suggestions", []) if backend == "llm" else []
-    bullet_rewrites = getattr(result, "bullet_rewrites", []) if backend == "llm" else []
+    is_llm = result.backend == "llm"
+    role_fit = result.role_fit if is_llm else ""
+    suggestions = result.suggestions if is_llm else []
+    bullet_rewrites = result.bullet_rewrites if is_llm else []
 
     if role_fit:
         print(f"  {c(BOLD)}{c(WHITE)}Role Fit Assessment:{c(NC)}")

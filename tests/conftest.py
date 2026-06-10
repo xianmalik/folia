@@ -10,7 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "core" / "scripts"))
 
 import pytest
 
-from ats.loader import ContactInfo, Position, Project, ResumeData, School, SkillCategory
+from ats.models import ContactInfo, Position, Project, ResumeData, School, SkillCategory
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .loader import ResumeData, Position
+from .models import Position, ResumeData
 from .date_parser import compute_years_experience
 from . import ontology as ont
 from . import config as _cfg

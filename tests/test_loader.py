@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ats import pdf_loader as pl
+from ats import loader as pl
 
 
 # ── line joining ─────────────────────────────────────────────────────────────

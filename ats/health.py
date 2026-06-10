@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .loader import ResumeData
+from .models import ResumeData
 from .date_parser import parse_date_range
 from . import config as _cfg
 
