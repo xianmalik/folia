@@ -6,7 +6,10 @@ MCP_DIR = str(Path(__file__).resolve().parents[1] / "mcp")
 if MCP_DIR not in sys.path:
     sys.path.insert(0, MCP_DIR)
 
-from folia import config, content  # noqa: E402
+import pytest  # noqa: E402
+import yaml  # noqa: E402
+
+from folia import config, content, editor  # noqa: E402
 from folia.models import clamp_threshold, overall_score  # noqa: E402
 
 
@@ -59,6 +62,89 @@ class TestResolveSavedJd:
         (tmp_path / "acme.txt").write_text("JD text")
         assert content.resolve_saved_jd("acme") == tmp_path / "acme.txt"
         assert content.resolve_saved_jd("acme.txt") == tmp_path / "acme.txt"
+
+
+@pytest.fixture
+def source_dir(tmp_path, monkeypatch):
+    """A scratch source/ with minimal projects and experience files."""
+    (tmp_path / "20-projects.yml").write_text(
+        "projects:\n"
+        "  - name: Existing\n"
+        "    subtitle: Already here\n"
+        "    items:\n"
+        "      - Did a thing.\n"
+        "\n"
+        "#   - name: Commented Out\n"
+        "#     subtitle: keep me\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "10-experience.yml").write_text(
+        "positions:\n"
+        "  - title: Software Engineer\n"
+        "    company: Acme\n"
+        "    location: Remote\n"
+        "    dates: January 2020 - Present\n"
+        "    items:\n"
+        "      - Built things.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "SOURCE_DIR", tmp_path)
+    return tmp_path
+
+
+class TestAddProject:
+    def test_inserts_at_top_and_stays_parseable(self, source_dir):
+        editor.add_project(
+            "Folia MCP",
+            "Resume hub over MCP",
+            ["Built an [[MCP]] server exposing the CV to agents."],
+            ["Python", "MCP"],
+            url="https://github.com/xianmalik/folia",
+        )
+        text = (source_dir / "20-projects.yml").read_text()
+        data = yaml.safe_load(text)
+        assert [p["name"] for p in data["projects"]] == ["Folia MCP", "Existing"]
+        assert data["projects"][0]["urlLabel"] == "github.com/xianmalik/folia"
+        assert "#   - name: Commented Out" in text  # comments preserved
+
+    def test_duplicate_name_rejected(self, source_dir):
+        with pytest.raises(ValueError, match="already exists"):
+            editor.add_project("existing", "dup", ["Bullet."], [])
+
+    def test_bad_url_rejected(self, source_dir):
+        with pytest.raises(ValueError, match="http"):
+            editor.add_project("New", "sub", ["Bullet."], [], url="ftp://x")
+
+    def test_empty_items_rejected(self, source_dir):
+        with pytest.raises(ValueError, match="at least one"):
+            editor.add_project("New", "sub", ["   "], [])
+
+
+class TestAddExperience:
+    def test_inserts_and_parses(self, source_dir):
+        editor.add_experience(
+            "Staff Engineer", "Initech", "Remote", "May 2026 - Present", ["Led [[X]]."]
+        )
+        data = yaml.safe_load((source_dir / "10-experience.yml").read_text())
+        assert data["positions"][0]["company"] == "Initech"
+        assert len(data["positions"]) == 2
+
+    def test_same_title_new_company_allowed(self, source_dir):
+        editor.add_experience(
+            "Software Engineer", "Initech", "Remote", "May 2026 - Present", ["Did Y."]
+        )
+        data = yaml.safe_load((source_dir / "10-experience.yml").read_text())
+        assert len(data["positions"]) == 2
+
+    def test_same_title_same_company_rejected(self, source_dir):
+        with pytest.raises(ValueError, match="already exists"):
+            editor.add_experience(
+                "software engineer", "ACME", "Remote", "May 2026 - Present", ["Dup."]
+            )
+
+    def test_missing_field_rejected(self, source_dir):
+        with pytest.raises(ValueError, match="dates"):
+            editor.add_experience("Dev", "Initech", "Remote", "  ", ["Bullet."])
 
 
 class TestContent:

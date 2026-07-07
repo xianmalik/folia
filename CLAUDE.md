@@ -62,7 +62,7 @@ This is a **YAML → LaTeX → PDF** resume generation system.
 make mcp-register   # installs the mcp dependency and registers user-scope
 ```
 
-Paths inside the server are anchored via `__file__`, so it works regardless of the launch directory. Tools: `get_resume`, `get_section`, `get_contact`, `list_sections`, `resume_status`, `build_resume`, `ats_health_check`, `ats_match_jd`, `list_job_descriptions`, `save_job_description`. Flow tools shell out to the existing `core/scripts/` entry points with the repo venv on `PATH` and `.env` loaded (for `GROQ_API_KEY`).
+Paths inside the server are anchored via `__file__`, so it works regardless of the launch directory. Tools: `get_resume`, `get_section`, `get_contact`, `list_sections`, `resume_status`, `build_resume`, `ats_health_check`, `ats_match_jd`, `list_job_descriptions`, `save_job_description`, plus the write-back tools `add_project` / `add_experience` (append-only inserts into `source/*.yml` that preserve comments and refuse duplicates — pair with the `log_project_work` prompt to capture work from other repos). Flow tools shell out to the existing `core/scripts/` entry points with the repo venv on `PATH` and `.env` loaded (for `GROQ_API_KEY`).
 
 ## Release
 

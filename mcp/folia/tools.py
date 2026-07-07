@@ -4,7 +4,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from . import config, content, runner
+from . import config, content, editor, runner
 from .app import mcp
 from .models import AtsResult, ResumeStatus, clamp_threshold, overall_score
 
@@ -170,6 +170,64 @@ def ats_match_jd(jd: str, threshold: float = 70.0, no_llm: bool = False) -> AtsR
         threshold=threshold,
         report=_truncated_report(output),
     )
+
+
+# ── write-back tools ─────────────────────────────────────────────────────────
+
+@mcp.tool(annotations=config.ADD)
+def add_project(
+    name: str,
+    subtitle: str,
+    items: list[str],
+    tech: list[str],
+    url: str = "",
+    url_label: str = "",
+) -> str:
+    """Add a new project to the resume (top of the projects section).
+
+    Use this to capture work from whatever repo you're currently in: summarize
+    the project and the user's actual contribution (check git log/blame for
+    their commits), draft resume-style bullets, get the user's approval, then
+    call this. Append-only — it refuses names that already exist. Follow up
+    with build_resume to regenerate the PDF.
+
+    Args:
+        name: Project name, e.g. 'Folia'.
+        subtitle: Short descriptor, e.g. 'YAML → LaTeX resume pipeline'.
+        items: 2-4 resume bullets. Past-tense action verb first; wrap key tech
+            in [[double brackets]] for bold; include honest metrics.
+        tech: Technology list, e.g. ['Python', 'LaTeX', 'GitHub Actions'].
+        url: Optional project URL (must be http/https).
+        url_label: Optional display label for the URL (defaults to the bare domain/path).
+    """
+    return editor.add_project(name, subtitle, items, tech, url, url_label)
+
+
+@mcp.tool(annotations=config.ADD)
+def add_experience(
+    title: str,
+    company: str,
+    location: str,
+    dates: str,
+    items: list[str],
+) -> str:
+    """Add a new position to the resume (top of the experience section).
+
+    For paid roles/engagements; use add_project for side or open-source work.
+    Same flow: summarize the user's contribution from the repo they're in,
+    draft bullets, confirm with the user, then call this. Append-only — it
+    refuses title+company pairs that already exist. Follow up with
+    build_resume to regenerate the PDF.
+
+    Args:
+        title: Role title, e.g. 'Senior Software Engineer'.
+        company: Company or client name.
+        location: e.g. 'Remote - Dhaka, Bangladesh'.
+        dates: e.g. 'January 2025 - Present' (month-name format, matching the file).
+        items: 2-6 resume bullets. Past-tense action verb first; wrap key tech
+            in [[double brackets]] for bold; include honest metrics.
+    """
+    return editor.add_experience(title, company, location, dates, items)
 
 
 @mcp.tool(annotations=config.READ)

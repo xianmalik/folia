@@ -40,3 +40,6 @@ LLM = ToolAnnotations(  # may call the Groq API when a key is configured
 WRITE = ToolAnnotations(  # overwrites jd/<name>.txt if it already exists
     readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False
 )
+ADD = ToolAnnotations(  # append-only: inserts new entries, never overwrites
+    readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False
+)

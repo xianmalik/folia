@@ -169,7 +169,9 @@ claude mcp add --scope user folia -- \
 
 > The image skips spaCy to stay small, so JD matching in Docker uses the LLM backend (`GROQ_API_KEY`).
 
-Exposed tools: `get_resume`, `get_section`, `get_contact`, `list_sections`, `resume_status`, `build_resume`, `ats_health_check`, `ats_match_jd`, `list_job_descriptions`, `save_job_description`.
+Exposed tools: `get_resume`, `get_section`, `get_contact`, `list_sections`, `resume_status`, `build_resume`, `ats_health_check`, `ats_match_jd`, `list_job_descriptions`, `save_job_description`, `add_project`, `add_experience`.
+
+The write-back tools close the loop: while working in **any** repo, ask Claude to "add this project to my resume" (or use the `log_project_work` prompt) — it summarizes the repo, digs your contribution out of `git log`, drafts bullets in the house style, and on approval inserts the entry into `source/*.yml` and rebuilds the PDF.
 
 <p align="center">
     <h2 align="center">Customization</h2>
