@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-ATS checker for folia resumes.
+ATS checker CLI for folia resumes.
 
-Reads resume content directly from data/*.yml (no PDF extraction needed)
-and scores it either as a standalone CV health check or against a job description.
-If GROQ_API_KEY is set, the LLM backend is used automatically for JD matching.
+Extracts resume content from the compiled dist/resume.pdf (building it first
+if needed) and scores it either as a standalone CV health check or against a
+job description. If GROQ_API_KEY is set, the LLM backend is used automatically
+for JD matching.
 
 Usage:
-  python3 scripts/ats_check.py                         # CV health check
-  python3 scripts/ats_check.py --jd jd.txt             # JD match (LLM if key set, else NLP)
-  python3 scripts/ats_check.py --jd -                  # JD from stdin
-  python3 scripts/ats_check.py --jd jd.txt --no-llm   # force NLP backend
+  python3 core/scripts/ats_check.py                         # CV health check
+  python3 core/scripts/ats_check.py --jd jd.txt             # JD match (LLM if key set, else NLP)
+  python3 core/scripts/ats_check.py --jd -                  # JD from stdin
+  python3 core/scripts/ats_check.py --jd jd.txt --no-llm   # force NLP backend
   make ats                                              # via Makefile
   make ats JD=jd.txt                                   # via Makefile with JD
 """
@@ -20,15 +21,15 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from . import health, llm_analyzer, loader, renderer, term
+from .llm_analyzer import RateLimitError
 
-from ats import pdf_loader, health, renderer  # noqa: E402
-from ats.llm_analyzer import RateLimitError  # noqa: E402
 
-_CYAN  = "\033[0;36m"
-_GREEN = "\033[0;32m"
-_GRAY  = "\033[0;37m"
-_NC    = "\033[0m"
+def _notify_model_fallback(primary: str, fallback: str) -> None:
+    print(
+        f"\n  {term.CYAN}⚡ Groq rate limit on {primary} — switching to {fallback}{term.NC}",
+        file=sys.stderr, flush=True,
+    )
 
 
 def _parse_args() -> argparse.Namespace:
@@ -37,10 +38,10 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 scripts/ats_check.py                             # CV health check\n"
-            "  python3 scripts/ats_check.py --jd jd.txt                # JD match (auto LLM if key set)\n"
-            "  cat jd.txt | python3 scripts/ats_check.py --jd -        # JD from stdin\n"
-            "  python3 scripts/ats_check.py --jd jd.txt --no-llm      # force NLP backend\n"
+            "  python3 core/scripts/ats_check.py                             # CV health check\n"
+            "  python3 core/scripts/ats_check.py --jd jd.txt                # JD match (auto LLM if key set)\n"
+            "  cat jd.txt | python3 core/scripts/ats_check.py --jd -        # JD from stdin\n"
+            "  python3 core/scripts/ats_check.py --jd jd.txt --no-llm      # force NLP backend\n"
             "  make ats                                                  # health check\n"
             "  make ats JD=jd.txt                                       # JD match (auto LLM if key set)"
         ),
@@ -88,34 +89,24 @@ def _resolve_llm(args) -> bool:
         return False
     if args.llm:
         return True
-    from ats.llm_analyzer import is_available
-    return is_available()
-
-
-_STEP_W = 52
-
-
-def _step(label: str) -> None:
-    pad = max(1, _STEP_W - 2 - len(label))
-    print(f"  {label}{' ' * pad}", end="", flush=True)
-
-
-def _done(note: str = "") -> None:
-    note_str = f"  {_GRAY}{note}{_NC}" if note else ""
-    print(f"{_GREEN}✓{_NC}{note_str}")
+    return llm_analyzer.is_available()
 
 
 def main() -> int:
     args = _parse_args()
 
-    pdf_loader.ensure_pdf()
+    loader.ensure_pdf()
 
     if args.jd is not None:
-        from ats import jd_matcher
+        from . import jd_matcher
 
-        _step("Loading resume data…")
-        resume = pdf_loader.load()
-        _done()
+        term.step("Loading resume data…")
+        resume = loader.load()
+        term.done()
+
+        renderer.render_jd_header(
+            resume.contact.full_name, resume.contact.email, no_color=args.no_color
+        )
 
         if args.jd == "-":
             jd_text = sys.stdin.read()
@@ -131,45 +122,55 @@ def main() -> int:
             return 1
 
         use_llm = _resolve_llm(args)
+        llm_analyzer.on_model_fallback = _notify_model_fallback
+        print()
         try:
-            result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=use_llm)
+            result = jd_matcher.run(
+                resume, jd_text, threshold=args.threshold, use_llm=use_llm, progress=term
+            )
         except RateLimitError:
             print(
-                f"\n  {_CYAN}⚡ LLM rate limit hit — falling back to local NLP check{_NC}\n",
+                f"\n  {term.CYAN}⚡ LLM rate limit hit — falling back to local NLP check{term.NC}\n",
                 file=sys.stderr, flush=True,
             )
-            result = jd_matcher.run(resume, jd_text, threshold=args.threshold, use_llm=False)
+            result = jd_matcher.run(
+                resume, jd_text, threshold=args.threshold, use_llm=False, progress=term
+            )
             result.llm_fallback = True
+        print()
     else:
-        _step("Loading resume data…")
-        resume = pdf_loader.load()
-        _done()
+        term.step("Loading resume data…")
+        resume = loader.load()
+        stats = loader.extraction_stats()
+        term.done()
 
-        _step("Running ATS health checks…")
-        result = health.run(resume, threshold=args.threshold)
-        _done()
+        term.step("Running ATS health checks…")
+        result = health.run(resume, threshold=args.threshold, stats=stats)
+        term.done()
 
-        _step("Generating report…")
-        _done()
+        term.step("Generating report…")
+        term.done()
         print()
 
     renderer.render(result, no_color=args.no_color)
     return 0 if result.passed else 1
 
 
-if __name__ == "__main__":
+def entrypoint() -> None:
+    """Console entry point: run main() with top-level error rendering."""
     try:
         sys.exit(main())
     except RateLimitError as e:
-        from ats.box import Box
-        _RED  = "\033[0;31m"
-        _BOLD = "\033[1m"
-        _NC   = "\033[0m"
-        c = lambda code: code  # color always on for error output
+        c = term.make_resolver(True)  # color always on for error output
         print(file=sys.stderr)
-        b = Box(color=_RED, c=c)
+        b = term.Box(color=term.RED, c=c)
         b.open()
-        b.raw_row(f"{_BOLD}✗  {e} — aborting check.{_NC}", len(f"✗  {e} — aborting check."))
+        msg = f"✗  {e} — aborting check."
+        b.raw_row(f"{term.BOLD}{msg}{term.NC}", len(msg))
         b.close()
         print(file=sys.stderr)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    entrypoint()

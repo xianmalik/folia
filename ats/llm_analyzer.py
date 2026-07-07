@@ -1,16 +1,10 @@
 #!/usr/bin/env python3
-"""LLM backend for ATS — Cerebras primary, Groq fallback."""
+"""LLM backend for ATS — Groq, with primary model and automatic fallback model."""
 from __future__ import annotations
 
 import json
 import os
 from dataclasses import dataclass, field
-
-try:
-    from cerebras.cloud.sdk import Cerebras as _CerebrasClient
-    _HAS_CEREBRAS = True
-except ImportError:
-    _HAS_CEREBRAS = False
 
 try:
     from groq import Groq as _GroqClient
@@ -19,16 +13,18 @@ except ImportError:
     _HAS_GROQ = False
 
 from . import config as _cfg
-from .loader import ResumeData
+from .models import ResumeData
 
-_LC               = _cfg.get().get("llm", {})
-_CEREBRAS_MODEL   = _LC.get("cerebras_model", "llama-3.3-70b")
-_GROQ_MODEL       = _LC.get("groq_model",     "llama-3.3-70b-versatile")
-_TEMPERATURE      = _LC.get("temperature",    0.1)
-_MAX_TOKENS       = _LC.get("max_tokens",     4096)
+_LC                  = _cfg.get().get("llm", {})
+_GROQ_MODEL          = _LC.get("groq_model",          "openai/gpt-oss-120b")
+_GROQ_FALLBACK_MODEL = _LC.get("groq_fallback_model", "meta-llama/llama-4-scout-17b-16e-instruct")
+_TEMPERATURE         = _LC.get("temperature",         0.1)
+_MAX_TOKENS          = _LC.get("max_tokens",          4096)
 
-_CYAN  = "\033[0;36m"
-_NC    = "\033[0m"
+# Optional hook called as on_model_fallback(primary_model, fallback_model)
+# when the primary model is rate-limited. Set by the CLI to surface the
+# switch to the user; this module itself never prints.
+on_model_fallback = None
 
 
 # ── public exceptions ──────────────────────────────────────────────────────────
@@ -58,58 +54,20 @@ class LLMAnalysis:
 # ── availability ───────────────────────────────────────────────────────────────
 
 def is_available() -> bool:
-    cerebras_ok = _HAS_CEREBRAS and bool(os.environ.get("CEREBRAS_API_KEY"))
-    groq_ok     = _HAS_GROQ     and bool(os.environ.get("GROQ_API_KEY"))
-    return cerebras_ok or groq_ok
-
-
-def active_backend() -> str:
-    if _HAS_CEREBRAS and os.environ.get("CEREBRAS_API_KEY"):
-        return "Cerebras"
-    if _HAS_GROQ and os.environ.get("GROQ_API_KEY"):
-        return "Groq"
-    return "none"
+    return _HAS_GROQ and bool(os.environ.get("GROQ_API_KEY"))
 
 
 # ── low-level chat helpers ─────────────────────────────────────────────────────
 
 
-def _chat_cerebras(system: str, user: str) -> dict:
-    api_key = os.environ.get("CEREBRAS_API_KEY")
-    if not api_key:
-        raise RuntimeError("CEREBRAS_API_KEY not set")
-    client = _CerebrasClient(api_key=api_key)
-    try:
-        response = client.chat.completions.create(
-            model=_CEREBRAS_MODEL,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user",   "content": user},
-            ],
-            response_format={"type": "json_object"},
-            temperature=_TEMPERATURE,
-            max_tokens=_MAX_TOKENS,
-        )
-    except Exception as exc:
-        msg = str(exc)
-        if "429" in msg or "rate_limit" in msg.lower() or "rate limit" in msg.lower():
-            raise RateLimitError("Cerebras rate limit hit") from None
-        raise
-    raw = response.choices[0].message.content
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Cerebras returned invalid JSON: {e}\n\n{raw}") from e
-
-
-def _chat_groq(system: str, user: str) -> dict:
+def _chat_groq(system: str, user: str, model: str) -> dict:
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY not set")
     client = _GroqClient(api_key=api_key)
     try:
         response = client.chat.completions.create(
-            model=_GROQ_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user",   "content": user},
@@ -131,36 +89,23 @@ def _chat_groq(system: str, user: str) -> dict:
 
 
 def _chat(system: str, user: str) -> dict:
-    """Try Cerebras first, fall back to Groq on rate limit or unavailability."""
-    import sys
-    cerebras_ok = _HAS_CEREBRAS and bool(os.environ.get("CEREBRAS_API_KEY"))
-    groq_ok     = _HAS_GROQ     and bool(os.environ.get("GROQ_API_KEY"))
+    """Try the primary Groq model, fall back to the secondary model on rate limit."""
+    if not (_HAS_GROQ and os.environ.get("GROQ_API_KEY")):
+        raise RuntimeError(
+            "No LLM backend available — set GROQ_API_KEY in .env"
+        )
 
-    if cerebras_ok:
+    try:
+        return _chat_groq(system, user, _GROQ_MODEL)
+    except RateLimitError:
+        if on_model_fallback is not None:
+            on_model_fallback(_GROQ_MODEL, _GROQ_FALLBACK_MODEL)
         try:
-            return _chat_cerebras(system, user)
+            return _chat_groq(system, user, _GROQ_FALLBACK_MODEL)
         except RateLimitError:
-            if groq_ok:
-                print(
-                    f"\n  {_CYAN}⚡ Cerebras rate limit — switching to Groq{_NC}",
-                    file=sys.stderr, flush=True,
-                )
-                try:
-                    return _chat_groq(system, user)
-                except RateLimitError:
-                    raise RateLimitError(
-                        "LLM API rate limit hit on all backends — try again later"
-                    ) from None
             raise RateLimitError(
-                "LLM API rate limit hit — try again later"
+                "LLM API rate limit hit on all models — try again later"
             ) from None
-
-    if groq_ok:
-        return _chat_groq(system, user)
-
-    raise RuntimeError(
-        "No LLM backend available — set CEREBRAS_API_KEY or GROQ_API_KEY in .env"
-    )
 
 
 # ── resume formatter ───────────────────────────────────────────────────────────

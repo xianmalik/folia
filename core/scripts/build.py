@@ -22,35 +22,57 @@ WHITE = "\033[1;37m"
 GRAY = "\033[0;37m"
 NC = "\033[0m"  # No Color
 BOLD = "\033[1m"
-# 256-color orange (falls back gracefully if unsupported)
-ORANGE = "\033[38;5;208m"
+
+
+# Directory layout (location-independent — anchored at the repo root)
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CORE_DIR = REPO_ROOT / "core"
+SCRIPTS_DIR = CORE_DIR / "scripts"
+SOURCE_DIR = REPO_ROOT / "source"
+DIST_DIR = REPO_ROOT / "dist"
 
 
 def read_version() -> str:
     """Read version from VERSION file"""
-    version_file = Path("VERSION")
+    version_file = REPO_ROOT / "VERSION"
     if version_file.exists():
         return version_file.read_text().strip()
     return "0.0.0"
 
 
+_BANNER_W = 69  # visible characters between the │ borders
+
+
+def _banner_row(*segments: tuple[str, str]) -> None:
+    """Print one banner row; *segments* are (color, text) pairs.
+
+    Padding is computed from the visible text so rows stay aligned no
+    matter how long the version string is.
+    """
+    visible = "".join(text for _, text in segments)
+    rendered = "".join(f"{color}{text}" for color, text in segments)
+    pad = max(_BANNER_W - len(visible), 0)
+    print(f"{CYAN}│{rendered}{' ' * pad}{CYAN}│{NC}")
+
+
 def print_banner(version: str) -> None:
-    print(f"{CYAN}╭─────────────────────────────────────────────────────────────────────╮{NC}")
-    print(f"{CYAN}│{WHITE} XeLaTeX CV Builder                                                  {CYAN}│{NC}")
-    print(f"{CYAN}│                                                                     │{NC}")
-    print(f"{CYAN}│{YELLOW} Version: {GREEN}v{version}{WHITE}                                                     {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Compiling: {GREEN}resume.tex{WHITE} → {GREEN}dist/resume-v{version}.pdf{WHITE}                      {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Engine: {BLUE}XeLaTeX{WHITE}                                                     {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Postbuild: {GRAY}Auto cleanup of auxiliary files after successful build   {CYAN}│{NC}")
-    print(f"{CYAN}│                                                                     │{NC}")
-    print(f"{CYAN}│{YELLOW} Usage: {GREEN}./scripts/build.py{WHITE}                                           {CYAN}│{NC}")
-    print(f"{CYAN}│{YELLOW} Author: {PURPLE}@xianmalik{WHITE}                                                  {CYAN}│{NC}")
-    print(f"{CYAN}╰─────────────────────────────────────────────────────────────────────╯{NC}")
+    print(f"{CYAN}╭{'─' * _BANNER_W}╮{NC}")
+    _banner_row((WHITE, " XeLaTeX CV Builder"))
+    _banner_row((NC, ""))
+    _banner_row((YELLOW, " Version: "), (GREEN, f"v{version}"))
+    _banner_row((YELLOW, " Compiling: "), (GREEN, "resume.tex"), (WHITE, " → "),
+                (GREEN, f"dist/resume-v{version}.pdf"))
+    _banner_row((YELLOW, " Engine: "), (BLUE, "XeLaTeX"))
+    _banner_row((YELLOW, " Postbuild: "), (GRAY, "Auto cleanup of auxiliary files after successful build"))
+    _banner_row((NC, ""))
+    _banner_row((YELLOW, " Usage: "), (GREEN, "./core/scripts/build.py"))
+    _banner_row((YELLOW, " Author: "), (PURPLE, "@xianmalik"))
+    print(f"{CYAN}╰{'─' * _BANNER_W}╯{NC}")
     print("")
 
 
 def ensure_output_dir() -> None:
-    os.makedirs("dist", exist_ok=True)
+    os.makedirs(DIST_DIR, exist_ok=True)
 
 
 def check_command_exists(cmd: str) -> bool:
@@ -59,12 +81,12 @@ def check_command_exists(cmd: str) -> bool:
 
 def generate_from_yaml_if_possible() -> None:
     # Mirrors the bash behavior: if python3 exists and generate.py is present,
-    # ensure PyYAML is installed and data/*.yml exists, then run the generator.
+    # ensure PyYAML is installed and source/*.yml exists, then run the generator.
     if not check_command_exists("python3"):
         return
 
-    generate_script = os.path.join("scripts", "generate.py")
-    if not os.path.isfile(generate_script):
+    generate_script = SCRIPTS_DIR / "generate.py"
+    if not generate_script.is_file():
         return
 
     # Verify PyYAML
@@ -74,19 +96,19 @@ def generate_from_yaml_if_possible() -> None:
         print(f"{RED}PyYAML not installed.{NC} Install with: {YELLOW}python3 -m pip install -r requirements.txt{NC}")
         sys.exit(1)
 
-    # Verify data directory exists with at least one .yml
-    if not os.path.isdir("data") or len(glob.glob(os.path.join("data", "*.yml"))) == 0:
-        print(f"{RED}No YAML data found in {WHITE}data/{NC}. Add files like {WHITE}data/summary.yml{NC}.")
+    # Verify source directory exists with at least one .yml
+    if not SOURCE_DIR.is_dir() or len(glob.glob(str(SOURCE_DIR / "*.yml"))) == 0:
+        print(f"{RED}No YAML data found in {WHITE}source/{NC}. Add files like {WHITE}source/00-summary.yml{NC}.")
         sys.exit(1)
 
     try:
-        subprocess.run(["python3", generate_script], check=True)
+        subprocess.run([sys.executable or "python3", str(generate_script)], check=True)
     except subprocess.CalledProcessError:
         print(f"{RED}Data generation failed.{NC}")
         sys.exit(1)
 
 
-def run_step_with_spinner(title: str, work_fn, color: str = GREEN) -> any:
+def run_step_with_spinner(title: str, work_fn, color: str = GREEN):
     """Run a step showing a spinner (yellow) and finalize with a green checkmark.
 
     The provided work_fn is executed in a background thread; its return value
@@ -129,22 +151,6 @@ def run_step_with_spinner(title: str, work_fn, color: str = GREEN) -> any:
 
 
 
-def cleanup_aux_files() -> None:
-    patterns = [
-        os.path.join("dist", "*.aux"),
-        os.path.join("dist", "*.log"),
-        os.path.join("dist", "*.out"),
-        os.path.join("dist", "*.fls"),
-        os.path.join("dist", "*.fdb_latexmk"),
-    ]
-    for pattern in patterns:
-        for path in glob.glob(pattern):
-            try:
-                os.remove(path)
-            except OSError:
-                pass
-
-
 def main() -> int:
     version = read_version()
     print_banner(version)
@@ -154,42 +160,37 @@ def main() -> int:
         generate_from_yaml_if_possible()
     run_step_with_spinner("Generating TeX from YAML...", _maybe_generate, color=GREEN)
 
-    # Step 2: Starting XeLaTeX
-    def _start_xelatex() -> subprocess.Popen:
-        # Start and immediately return; the next step will wait
-        log_path_local = os.path.join("dist", "resume.log")
+    # Step 2: Compile with XeLaTeX.
+    def _compile() -> int:
+        # Run from core/ so resume.tex's relative \input{sections/…},
+        # \fontdir[font/], and the class partials all resolve, while the
+        # output (PDF + aux) is written to the repo-level dist/ directory.
+        log_path_local = DIST_DIR / "resume.log"
         with open(log_path_local, "w") as log_file_local:
-            proc = subprocess.Popen(
+            return subprocess.run(
                 [
                     "xelatex",
                     "-interaction=nonstopmode",
-                    "-output-directory=dist",
+                    f"-output-directory={DIST_DIR}",
                     "resume.tex",
                 ],
+                cwd=str(CORE_DIR),
                 stdout=log_file_local,
                 stderr=subprocess.STDOUT,
-            )
-        return proc
+            ).returncode
 
-    process = run_step_with_spinner("Starting XeLaTeX...", _start_xelatex, color=GREEN)
-
-    # Step 3: Compiling...
-    def _wait_compile() -> int:
-        return process.wait() or 0
-
-    run_step_with_spinner("Compiling...", _wait_compile, color=GREEN)
-    exit_code = process.returncode or 0
-    pdf_path = os.path.join("dist", "resume.pdf")
-    versioned_pdf_path = os.path.join("dist", f"resume-v{version}.pdf")
+    exit_code = run_step_with_spinner("Compiling with XeLaTeX...", _compile, color=GREEN)
+    pdf_path = str(DIST_DIR / "resume.pdf")
+    versioned_pdf_path = str(DIST_DIR / f"resume-v{version}.pdf")
 
     if exit_code == 0 and os.path.isfile(pdf_path):
         # Rename to versioned filename
         shutil.copy2(pdf_path, versioned_pdf_path)
 
-        # Step 4: Cleaning up aux files (delegate to scripts/clean.py)
+        # Step 4: Cleaning up aux files (delegate to clean.py)
         def _clean():
             subprocess.run(
-                [sys.executable or "python3", "scripts/clean.py"],
+                [sys.executable or "python3", str(SCRIPTS_DIR / "clean.py")],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -202,7 +203,7 @@ def main() -> int:
         return 0
     else:
         print(f"{RED}✗ Compilation failed{NC}")
-        _print_latex_errors(os.path.join("dist", "resume.log"))
+        _print_latex_errors(str(DIST_DIR / "resume.log"))
         return 1
 
 
@@ -243,9 +244,9 @@ if __name__ == "__main__":
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  python3 scripts/build.py          # standard build\n"
-            "  python3 scripts/build.py --open   # build and open PDF\n"
-            "  make build                         # via Makefile"
+            "  python3 core/scripts/build.py          # standard build\n"
+            "  python3 core/scripts/build.py --open   # build and open PDF\n"
+            "  make build                              # via Makefile"
         ),
     )
     parser.add_argument(
@@ -254,7 +255,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     exit_code = main()
     if exit_code == 0 and args.open:
-        pdf = os.path.join("dist", "resume.pdf")
+        pdf = str(DIST_DIR / "resume.pdf")
         if sys.platform == "darwin":
             subprocess.run(["open", pdf], check=False)
         else:

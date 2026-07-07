@@ -1,209 +1,471 @@
 #!/usr/bin/env python3
+"""Load ResumeData by extracting text from the compiled dist/resume.pdf."""
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
-import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 try:
-    import yaml
+    import pypdf
+    _HAS_PYPDF = True
 except ImportError:
-    print("loader.py: PyYAML not installed — run: pip install PyYAML", file=sys.stderr)
-    sys.exit(1)
+    _HAS_PYPDF = False
+
+from .models import (
+    ContactInfo,
+    Language,
+    Position,
+    Project,
+    ResumeData,
+    School,
+    SkillCategory,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DATA_DIR = REPO_ROOT / "data"
-RESUME_TEX = REPO_ROOT / "resume.tex"
+DIST_DIR = REPO_ROOT / "dist"
+PDF_PATH = DIST_DIR / "resume.pdf"
 
-_BOLD_RE = re.compile(r"\[\[(.+?)\]\]")
+# ── section header set (all-caps as they appear in PDF) ───────────────────────
+_SECTION_MAP: dict[str, str] = {
+    "ABOUT ME": "summary",
+    "PROFESSIONAL EXPERIENCE": "experience",
+    "EXPERIENCE": "experience",
+    "INTERNSHIPS": "internships",
+    "PROJECTS": "projects",
+    "SKILLS": "skills",
+    "EDUCATION": "education",
+    "LANGUAGES": "languages",
+}
+
+# ── regexes ───────────────────────────────────────────────────────────────────
+_PAGE_FOOTER_RE = re.compile(
+    r"^(?:January|February|March|April|May|June|July|August|September|"
+    r"October|November|December)\s+\d{1,2},\s+\d{4}\s+\d+$",
+    re.IGNORECASE,
+)
+_DATE_RE = re.compile(
+    r"\b(?:January|February|March|April|May|June|July|August|September|"
+    r"October|November|December)\s+\d{4}"
+    r"|\b\d{4}\s*[-–]\s*(?:\d{4}|Present)\b",
+    re.IGNORECASE,
+)
+_BULLET = "•"
 
 
-def _strip_bold(s: str) -> str:
-    return _BOLD_RE.sub(r"\1", str(s))
+# ── text extraction ───────────────────────────────────────────────────────────
+
+def _extract_lines(pdf_path: Path) -> list[str]:
+    """Return non-empty, non-footer lines from every page of the PDF."""
+    if not _HAS_PYPDF:
+        raise RuntimeError("pypdf not installed — run: pip install pypdf")
+    reader = pypdf.PdfReader(str(pdf_path))
+    lines: list[str] = []
+    for page in reader.pages:
+        for raw in (page.extract_text() or "").split("\n"):
+            ln = raw.strip()
+            if ln and not _PAGE_FOOTER_RE.match(ln):
+                lines.append(ln)
+    return lines
 
 
-def _tex_macro(tex: str, macro: str) -> str:
-    m = re.search(rf"\\{re.escape(macro)}\{{([^}}]*)\}}", tex)
-    return m.group(1).strip() if m else ""
+def _split_sections(lines: list[str]) -> dict[str, list[str]]:
+    """Partition lines into named sections keyed by _SECTION_MAP values."""
+    sections: dict[str, list[str]] = {"header": []}
+    current = "header"
+    for ln in lines:
+        key = _SECTION_MAP.get(ln.upper())
+        if key:
+            current = key
+            sections.setdefault(current, [])
+        else:
+            sections[current].append(ln)
+    return sections
 
+
+# ── line-joining (handle PDF soft-wrap and hyphenation) ───────────────────────
+
+_STRUCTURAL_PREFIXES = (_BULLET, "Technologies:", "URL:")
+
+
+def _is_structural(ln: str) -> bool:
+    return (
+        any(ln.startswith(p) for p in _STRUCTURAL_PREFIXES)
+        or bool(_DATE_RE.search(ln))
+        or ln.upper() in _SECTION_MAP
+    )
+
+
+def _join_wraps(lines: list[str]) -> list[str]:
+    """Join continuation lines back into complete logical lines.
+
+    A line is a continuation of the previous when:
+    - previous line ends with '-' (hyphenated word-break)
+    - current line starts with a lowercase letter (sentence wrap)
+    - previous line ends without sentence-closing punctuation AND
+      current line starts with an uppercase letter that is NOT a new
+      structural element (bullet, date, Technologies:, URL:, section header)
+    """
+    if not lines:
+        return []
+    result: list[str] = []
+    current = lines[0]
+    for ln in lines[1:]:
+        if not ln:
+            continue
+        # Structural lines always start fresh — never merged into previous
+        if _is_structural(ln):
+            result.append(current)
+            current = ln
+        elif current.endswith("-"):
+            current = current[:-1] + ln
+        elif ln[0].islower():
+            current = current + " " + ln
+        # Technologies:/URL: lines are always complete — never absorb the next line
+        elif any(current.startswith(p) for p in ("Technologies:", "URL:")):
+            result.append(current)
+            current = ln
+        elif current[-1] not in ".!?":
+            # Uppercase continuation without sentence boundary (e.g. "Next.js, ...")
+            current = current + " " + ln
+        else:
+            result.append(current)
+            current = ln
+    result.append(current)
+    return result
+
+
+# ── section parsers ───────────────────────────────────────────────────────────
+
+def _parse_contact(header: list[str]) -> ContactInfo:
+    name_parts = header[0].split() if header else []
+    first = name_parts[0] if name_parts else ""
+    last = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    position = header[1] if len(header) > 1 else ""
+    address = header[2] if len(header) > 2 else ""
+
+    email = mobile = homepage = github = linkedin = ""
+    usernames: list[str] = []
+
+    for ln in header[3:]:
+        # Contact bar format: "ICON value | ICON value | ..."
+        # Each chunk is: single icon character + space + the actual value
+        for chunk in ln.split("|"):
+            parts = chunk.strip().split(None, 1)  # split at first whitespace
+            if len(parts) < 2:
+                continue
+            val = parts[1].strip()
+            if not val:
+                continue
+            if "@" in val:
+                email = val
+            elif re.match(r"\+\d", val):
+                mobile = val
+            elif "." in val and " " not in val:
+                homepage = homepage or val
+            else:
+                usernames.append(val)
+
+    # Assign usernames in the order they appear: first → github, second → linkedin
+    if usernames:
+        github = usernames[0]
+    if len(usernames) > 1:
+        linkedin = usernames[1]
+
+    return ContactInfo(
+        first_name=first,
+        last_name=last,
+        position=position,
+        address=address,
+        email=email,
+        mobile=mobile,
+        homepage=homepage,
+        github=github,
+        linkedin=linkedin,
+    )
+
+
+def _parse_summary(lines: list[str]) -> str:
+    return " ".join(_join_wraps(lines))
+
+
+def _collect_bullets(lines: list[str], start: int) -> tuple[list[str], int]:
+    """Collect bullet items starting at index start; return (items, next_idx)."""
+    items: list[str] = []
+    i = start
+    while i < len(lines) and lines[i].startswith(_BULLET):
+        items.append(lines[i][1:].strip())
+        i += 1
+    return items, i
+
+
+def _parse_positions(lines: list[str]) -> list[Position]:
+    """Parse experience or internship lines into Position objects."""
+    lines = _join_wraps(lines)
+    positions: list[Position] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        # Pattern: company line (no date) immediately followed by title+date line
+        if (
+            not ln.startswith(_BULLET)
+            and not _DATE_RE.search(ln)
+            and i + 1 < len(lines)
+            and not lines[i + 1].startswith(_BULLET)
+            and _DATE_RE.search(lines[i + 1])
+        ):
+            company = ln
+            title_ln = lines[i + 1]
+            dm = _DATE_RE.search(title_ln)
+            title = title_ln[: dm.start()].strip() if dm else title_ln
+            dates = title_ln[dm.start() :].strip() if dm else ""
+            items, j = _collect_bullets(lines, i + 2)
+            positions.append(
+                Position(title=title, company=company, location="", dates=dates, items=items)
+            )
+            i = j
+        else:
+            i += 1
+    return positions
+
+
+def _parse_projects(lines: list[str]) -> list[Project]:
+    lines = _join_wraps(lines)
+    projects: list[Project] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith(_BULLET) or ln.startswith("Technologies:") or ln.startswith("URL:"):
+            i += 1
+            continue
+        # New project header line (name + subtitle concatenated)
+        name = ln
+        items: list[str] = []
+        tech: list[str] = []
+        url: str | None = None
+        j = i + 1
+        while j < len(lines):
+            bl = lines[j]
+            if bl.startswith(_BULLET):
+                items.append(bl[1:].strip())
+            elif bl.startswith("Technologies:"):
+                tech = [t.strip() for t in bl[len("Technologies:"):].split(",") if t.strip()]
+            elif bl.startswith("URL:"):
+                url = bl[len("URL:"):].strip()
+            else:
+                break  # next project starts
+            j += 1
+        projects.append(Project(name=name, subtitle="", items=items, tech=tech, url=url))
+        i = j
+    return projects
+
+
+def _is_tech_term_start(word: str, prev_word: str | None) -> bool:
+    """Return True if word looks like the first word of the items list."""
+    if prev_word == "&":
+        return False
+    at_start = prev_word is None
+    if re.search(r"[./()]", word):
+        return True
+    if len(word) >= 3 and word.isupper():
+        return True
+    if not at_start and re.search(r"[a-z][A-Z]", word):
+        return True
+    if not at_start and word[-1:].isdigit():
+        return True
+    return False
+
+
+def _split_skill_line(line: str) -> tuple[str, list[str]]:
+    """Split 'Category Item1, Item2, ...' → (category_name, [items])."""
+    comma_pos = line.find(",")
+    if comma_pos == -1:
+        # No comma — split at last space as best effort
+        parts = line.rsplit(" ", 1)
+        return (parts[0], [parts[1]]) if len(parts) == 2 else ("", [line])
+
+    pre = line[:comma_pos]
+    post = line[comma_pos + 1 :]
+    words = pre.split()
+
+    item_start = len(words)
+    prev: str | None = None
+    for idx, w in enumerate(words):
+        if _is_tech_term_start(w, prev):
+            item_start = idx
+            break
+        prev = w
+    if item_start == len(words):
+        item_start = max(len(words) - 1, 0)
+
+    category = " ".join(words[:item_start])
+    first_item = " ".join(words[item_start:])
+    all_items = (first_item + ", " + post.strip()) if first_item else post.strip()
+    items = [s.strip() for s in all_items.split(",") if s.strip()]
+    return category, items
+
+
+def _parse_skills(lines: list[str]) -> list[SkillCategory]:
+    """Join wrapped skill lines then parse each into (category, items)."""
+    joined: list[str] = []
+    for ln in lines:
+        if not ln.strip():
+            continue
+        if not joined:
+            joined.append(ln)
+            continue
+        prev = joined[-1]
+        last_word = prev.rstrip().split()[-1] if prev.strip() else ""
+        if (
+            prev.rstrip().endswith(",")
+            or (len(last_word) <= 2 and last_word.isupper())
+            or not ln[0].isupper()
+        ):
+            joined[-1] = prev.rstrip() + " " + ln.strip()
+        else:
+            joined.append(ln)
+
+    cats: list[SkillCategory] = []
+    for ln in joined:
+        category, items = _split_skill_line(ln.strip())
+        if items:
+            cats.append(SkillCategory(category=category, items=items))
+    return cats
+
+
+def _parse_schools(lines: list[str]) -> list[School]:
+    lines = _join_wraps(lines)
+    schools: list[School] = []
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if (
+            not ln.startswith(_BULLET)
+            and not _DATE_RE.search(ln)
+            and i + 1 < len(lines)
+            and _DATE_RE.search(lines[i + 1])
+        ):
+            institution = ln
+            deg_ln = lines[i + 1]
+            dm = _DATE_RE.search(deg_ln)
+            degree = deg_ln[: dm.start()].strip() if dm else deg_ln
+            dates = deg_ln[dm.start() :].strip() if dm else ""
+            items, j = _collect_bullets(lines, i + 2)
+            schools.append(
+                School(
+                    degree=degree,
+                    institution=institution,
+                    location="",
+                    dates=dates,
+                    items=items,
+                )
+            )
+            i = j
+        else:
+            i += 1
+    return schools
+
+
+def _parse_languages(lines: list[str]) -> list[Language]:
+    langs: list[Language] = []
+    for ln in lines:
+        parts = ln.split(" ", 1)
+        langs.append(Language(name=parts[0], level=parts[1] if len(parts) > 1 else ""))
+    return langs
+
+
+# ── extraction statistics (for the parseability check) ───────────────────────
 
 @dataclass
-class ContactInfo:
-    first_name: str = ""
-    last_name: str = ""
-    position: str = ""
-    address: str = ""
-    mobile: str = ""
-    email: str = ""
-    github: str = ""
-    linkedin: str = ""
-    homepage: str = ""
+class ExtractionStats:
+    """Raw signals about how cleanly text came out of the PDF."""
+    pages: int
+    chars: int
+    words: int
+    lines: int
+    images: int             # embedded raster images (icons/graphics are ATS-invisible)
+    replacement_chars: int  # U+FFFD and friends — font/encoding damage
+    unlabeled_lines: int    # lines before any recognised section header (beyond contact)
+    median_line_len: float  # very short medians suggest multi-column scramble
 
     @property
-    def full_name(self) -> str:
-        return f"{self.first_name} {self.last_name}".strip()
+    def chars_per_page(self) -> float:
+        return self.chars / self.pages if self.pages else 0.0
 
 
-@dataclass
-class Position:
-    title: str
-    company: str
-    location: str
-    dates: str
-    items: list[str]
+_CONTACT_BLOCK_LINES = 6  # name, role, address, contact bar — a normal unlabeled head
 
 
-@dataclass
-class Project:
-    name: str
-    subtitle: str
-    items: list[str]
-    tech: list[str]
-    url: str | None
+def extraction_stats(pdf_path: Path = PDF_PATH) -> ExtractionStats:
+    """Measure extraction quality the way an ATS parser would experience it."""
+    if not _HAS_PYPDF:
+        raise RuntimeError("pypdf not installed — run: pip install pypdf")
+    reader = pypdf.PdfReader(str(pdf_path))
 
+    raw_text = ""
+    images = 0
+    for page in reader.pages:
+        raw_text += (page.extract_text() or "") + "\n"
+        try:
+            images += len(page.images)
+        except Exception:
+            pass  # malformed resource dict — counts as zero rather than failing
 
-@dataclass
-class SkillCategory:
-    category: str
-    items: list[str]
+    lines = _extract_lines(pdf_path)
+    sections = _split_sections(lines)
+    header_lines = len(sections.get("header", []))
+    line_lens = sorted(len(ln) for ln in lines)
+    median_len = float(line_lens[len(line_lens) // 2]) if line_lens else 0.0
 
-
-@dataclass
-class School:
-    degree: str
-    institution: str
-    location: str
-    dates: str
-    items: list[str]
-
-
-@dataclass
-class Language:
-    name: str
-    level: str
-
-
-@dataclass
-class ResumeData:
-    contact: ContactInfo = field(default_factory=ContactInfo)
-    summary: str = ""
-    positions: list[Position] = field(default_factory=list)
-    internships: list[Position] = field(default_factory=list)
-    projects: list[Project] = field(default_factory=list)
-    skills: list[SkillCategory] = field(default_factory=list)
-    schools: list[School] = field(default_factory=list)
-    languages: list[Language] = field(default_factory=list)
-
-    def all_positions(self) -> list[Position]:
-        return self.positions + self.internships
-
-    def all_text(self) -> str:
-        parts = [self.summary]
-        for pos in self.all_positions():
-            parts += [pos.title, pos.company] + pos.items
-        for proj in self.projects:
-            parts += [proj.name, proj.subtitle] + proj.items + proj.tech
-        for sc in self.skills:
-            parts += [sc.category] + sc.items
-        for school in self.schools:
-            parts += [school.degree, school.institution] + school.items
-        return " ".join(parts)
-
-
-def _load_yaml(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError as e:
-        warnings.warn(f"Skipping {path}: {e}")
-        return {}
-
-
-def _parse_contact(tex_path: Path) -> ContactInfo:
-    if not tex_path.exists():
-        return ContactInfo()
-    tex = tex_path.read_text(encoding="utf-8")
-    m = re.search(r"\\name\{([^}]*)\}\{([^}]*)\}", tex)
-    return ContactInfo(
-        first_name=m.group(1).strip() if m else "",
-        last_name=m.group(2).strip() if m else "",
-        position=_tex_macro(tex, "position"),
-        address=_tex_macro(tex, "address"),
-        mobile=_tex_macro(tex, "mobile"),
-        email=_tex_macro(tex, "email"),
-        github=_tex_macro(tex, "github"),
-        linkedin=_tex_macro(tex, "linkedin"),
-        homepage=_tex_macro(tex, "homepage"),
+    return ExtractionStats(
+        pages=len(reader.pages),
+        chars=len(raw_text),
+        words=len(raw_text.split()),
+        lines=len(lines),
+        images=images,
+        replacement_chars=raw_text.count("�"),
+        unlabeled_lines=max(0, header_lines - _CONTACT_BLOCK_LINES),
+        median_line_len=median_len,
     )
 
 
-def _parse_position(raw: dict) -> Position:
-    return Position(
-        title=_strip_bold(raw.get("title", "")),
-        company=_strip_bold(raw.get("company", "")),
-        location=_strip_bold(raw.get("location", "")),
-        dates=str(raw.get("dates", "")),
-        items=[_strip_bold(i) for i in raw.get("items", [])],
+# ── public API ────────────────────────────────────────────────────────────────
+
+def ensure_pdf(pdf_path: Path = PDF_PATH) -> None:
+    """Build the PDF if it doesn't exist yet."""
+    if pdf_path.exists():
+        return
+    build_script = REPO_ROOT / "core" / "scripts" / "build.py"
+    print(f"  PDF not found — running build first…", flush=True)
+    result = subprocess.run(
+        [sys.executable, str(build_script)],
+        cwd=str(REPO_ROOT),
     )
+    if result.returncode != 0:
+        raise RuntimeError("Build failed — cannot run ATS without dist/resume.pdf")
 
 
-def load(repo_root: Path | None = None) -> ResumeData:
-    data_dir = (repo_root or REPO_ROOT) / "data"
-    tex_path = (repo_root or REPO_ROOT) / "resume.tex"
+def load(pdf_path: Path = PDF_PATH) -> ResumeData:
+    """Extract and parse ResumeData from a compiled PDF."""
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"PDF not found: {pdf_path}")
 
-    resume = ResumeData(contact=_parse_contact(tex_path))
+    lines = _extract_lines(pdf_path)
+    sec = _split_sections(lines)
 
-    summary_data = _load_yaml(data_dir / "00-summary.yml")
-    resume.summary = _strip_bold(summary_data.get("summary", ""))
-
-    exp_data = _load_yaml(data_dir / "10-experience.yml")
-    resume.positions = [_parse_position(p) for p in exp_data.get("positions", [])]
-    resume.internships = [_parse_position(p) for p in exp_data.get("internships", [])]
-
-    proj_data = _load_yaml(data_dir / "20-projects.yml")
-    resume.projects = [
-        Project(
-            name=_strip_bold(p.get("name", "")),
-            subtitle=_strip_bold(p.get("subtitle", "")),
-            items=[_strip_bold(i) for i in p.get("items", [])],
-            tech=[str(t) for t in p.get("tech", [])],
-            url=p.get("url"),
-        )
-        for p in proj_data.get("projects", [])
-    ]
-
-    skills_data = _load_yaml(data_dir / "30-skills.yml")
-    resume.skills = [
-        SkillCategory(
-            category=str(s.get("category", "")),
-            items=[str(i) for i in s.get("items", [])],
-        )
-        for s in skills_data.get("skills", [])
-    ]
-
-    edu_data = _load_yaml(data_dir / "40-education.yml")
-    resume.schools = [
-        School(
-            degree=_strip_bold(s.get("degree", "")),
-            institution=_strip_bold(s.get("institution", "")),
-            location=_strip_bold(s.get("location", "")),
-            dates=str(s.get("dates", "")),
-            items=[_strip_bold(i) for i in s.get("items", [])],
-        )
-        for s in edu_data.get("schools", [])
-    ]
-
-    lang_data = _load_yaml(data_dir / "50-languages.yml")
-    resume.languages = [
-        Language(name=str(lg.get("name", "")), level=str(lg.get("level", "")))
-        for lg in lang_data.get("languages", [])
-    ]
+    resume = ResumeData(
+        contact=_parse_contact(sec.get("header", [])),
+        summary=_parse_summary(sec.get("summary", [])),
+        positions=_parse_positions(sec.get("experience", [])),
+        internships=_parse_positions(sec.get("internships", [])),
+        projects=_parse_projects(sec.get("projects", [])),
+        skills=_parse_skills(sec.get("skills", [])),
+        schools=_parse_schools(sec.get("education", [])),
+        languages=_parse_languages(sec.get("languages", [])),
+    )
 
     if not resume.contact.full_name:
-        raise ValueError(
-            f"Could not parse a name from {tex_path} — check the \\name macro"
-        )
+        raise ValueError("Could not extract a name from the PDF — is the PDF valid?")
     return resume

@@ -17,7 +17,7 @@ jobs:
         uses: ./.github/actions/setup-latex
 
       - name: Build resume
-        run: python3 scripts/build.py
+        run: python3 core/scripts/build.py
 
       - name: Get tag name
         id: get_tag

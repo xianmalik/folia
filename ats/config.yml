@@ -16,6 +16,13 @@ health:
   quant_ratio_good: 0.50        # ≥50% of bullets should contain a measurable metric
   quant_ratio_ok: 0.30          # ≥30% is acceptable (below = low score)
   passive_ratio_warn: 0.20      # passive/weak bullets above this fraction = warning
+  stuffing_bullet_share: 0.35   # one tech term in more than this share of bullets = stuffing flag
+  parseability:                 # formatting failures shared by all major ATS parsers
+    min_chars_per_page: 200     # below this the page is likely images/scanned
+    word_count_min: 400         # ideal resume length window (whole document)
+    word_count_max: 850
+    max_unlabeled_lines: 4      # lines before the first section header, beyond the contact block
+    min_median_line_len: 25     # shorter medians suggest multi-column scramble
 
 jd_match:
   pass_threshold: 70.0          # minimum overall score to pass JD matching
@@ -32,7 +39,15 @@ jd_match:
   keyword_scores:
     direct: 1.00                # score for an exact keyword match in resume text
     ontology: 0.70              # score for a match via ontology implication
+    compound: 0.60              # all words of a multi-word term covered individually
     fuzzy: 0.40                 # score for a fuzzy string match
+  skills_only_factor: 0.90      # discount for direct matches that appear only in the skills list
+  stale_factor: 0.92            # discount for skills demonstrated only in roles before the current one
+  importance:                   # per-keyword weight in the keyword score
+    required_boost: 1.3         # keyword appears near "required"/"must have"/"essential"
+    nice_factor: 0.6            # keyword appears only near "nice to have"/"preferred"/"plus"
+    freq_bonus: 0.2             # extra weight per repeat mention in the JD…
+    freq_cap: 3                 # …counting at most this many repeats
   fuzzy_min_ratio: 85           # minimum rapidfuzz ratio (0-100) to count as a match
   max_rewrites: 5               # max bullet rewrites to generate via LLM
 
@@ -46,7 +61,7 @@ date_parser:
   year_max: 2050                # latest plausible year in a date range
 
 llm:
-  cerebras_model: gpt-oss-120b           # primary backend (120B reasoning model, free tier)
-  groq_model: llama-3.3-70b-versatile   # fallback backend (auto-used if Cerebras rate-limits)
-  temperature: 0.1                      # lower = more deterministic outputs
-  max_tokens: 4096                      # max tokens per LLM response
+  groq_model: openai/gpt-oss-120b                              # primary model (120B reasoning model, free tier)
+  groq_fallback_model: meta-llama/llama-4-scout-17b-16e-instruct  # fallback model (auto-used if primary rate-limits)
+  temperature: 0.1                                             # lower = more deterministic outputs
+  max_tokens: 4096                                             # max tokens per LLM response

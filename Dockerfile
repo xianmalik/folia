@@ -19,4 +19,4 @@ COPY . .
 
 RUN mkdir -p dist
 
-CMD ["python3", "scripts/build.py"]
+CMD ["python3", "core/scripts/build.py"]

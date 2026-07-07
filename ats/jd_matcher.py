@@ -7,7 +7,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .loader import ResumeData, Position
+from .models import Position, ResumeData
 from .date_parser import compute_years_experience
 from . import ontology as ont
 from . import config as _cfg
@@ -38,12 +38,20 @@ _EXP_OK            = _JC["experience_years"]["ok"]
 _EXP_PARTIAL       = _JC["experience_years"]["partial"]
 _KW_SCORE_DIRECT   = _JC["keyword_scores"]["direct"]
 _KW_SCORE_ONTOLOGY = _JC["keyword_scores"]["ontology"]
+_KW_SCORE_COMPOUND = _JC["keyword_scores"]["compound"]
 _KW_SCORE_FUZZY    = _JC["keyword_scores"]["fuzzy"]
+_SKILLS_ONLY_FACTOR = _JC["skills_only_factor"]
+_STALE_FACTOR       = _JC["stale_factor"]
+_IMP_REQUIRED_BOOST = _JC["importance"]["required_boost"]
+_IMP_NICE_FACTOR    = _JC["importance"]["nice_factor"]
+_IMP_FREQ_BONUS     = _JC["importance"]["freq_bonus"]
+_IMP_FREQ_CAP       = _JC["importance"]["freq_cap"]
 _FUZZY_MIN_RATIO   = _JC["fuzzy_min_ratio"]
 _PASS_THRESHOLD    = _JC["pass_threshold"]
 _MAX_REWRITES      = _JC["max_rewrites"]
 
 _GENERIC_TERMS: set[str] = set(_KW["generic_terms"])
+_SOFT_SKILLS: list[str] = _KW.get("soft_skills", [])
 _SENIORITY: set[str] = set(_KW["seniority"])
 _HR_WORD_BLOCKLIST: set[str] = set(_KW["hr_word_blocklist"])
 _ROLE_EQUIV: dict[str, str] = _KW["role_equiv"]
@@ -69,8 +77,10 @@ def _strip_nontechnical_sections(text: str) -> str:
 class KeywordMatch:
     keyword: str
     found_in: list[str]
-    matched_via: str  # "direct" | "ontology" | "fuzzy"
+    matched_via: str  # "direct" | "ontology" | "compound" | "fuzzy"
     score: float
+    weight: float = 1.0  # importance of this keyword in the JD
+    stale: bool = False  # matched only in roles older than the current one
 
 
 @dataclass
@@ -108,6 +118,7 @@ class JDResult:
     threshold: float
     edu_gap: EduGap | None = None
     author_name: str = ""
+    author_email: str = ""
     mode: str = "jd"
     suggestions: list[str] = field(default_factory=list)
     role_fit: str = ""
@@ -115,6 +126,8 @@ class JDResult:
     llm_fallback: bool = False  # True when LLM was attempted but rate-limited
     keyword_density: dict[str, int] = field(default_factory=dict)  # section → hit count
     bullet_rewrites: list[BulletRewrite] = field(default_factory=list)
+    keyword_weights: dict[str, float] = field(default_factory=dict)  # JD keyword → importance
+    soft_skills: list[tuple[str, bool]] = field(default_factory=list)  # (skill in JD, present in resume)
 
 
 def _load_spacy():
@@ -186,24 +199,70 @@ def _collect_tokens(doc, known_tech: dict, add) -> None:
                 add(token.text)
 
 
+_PRONOUNS = {"you", "your", "yours", "our", "ours", "we", "us", "my", "their", "everyone", "someone"}
+_LEADING_ARTICLES = {"a", "an", "the", "this", "that", "these", "those"}
+_TIME_RE = re.compile(r"\b\d{1,2}\s*(?:am|pm)\b")
+
+
+def _strip_leading_article(text: str) -> str:
+    words = text.split()
+    if len(words) > 1 and words[0].lower() in _LEADING_ARTICLES:
+        return " ".join(words[1:])
+    return text
+
+
+def _looks_like_noise(norm: str) -> bool:
+    """Reject non-skill phrases: pronoun talk, clock times, generic terms."""
+    if not norm or len(norm) <= 2 or norm in _GENERIC_TERMS:
+        return True
+    words = norm.split()
+    if any(w in _PRONOUNS for w in words):
+        return True
+    if _TIME_RE.search(norm):
+        return True
+    words_stripped = [w.rstrip("s") for w in words]
+    if len(words) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_stripped):
+        return True
+    return False
+
+
+def _company_norms(doc, known_tech: dict) -> set[str]:
+    """Normalized employer-name terms from the JD's opening lines.
+
+    The hiring company's name is not a skill — drop it and its words from
+    keyword extraction, unless the word is itself a known technology.
+    """
+    head = "\n".join(doc.text.split("\n")[:6]).lower()
+    norms: set[str] = set()
+    for ent in doc.ents:
+        if ent.label_ != "ORG" or ent.text.lower() not in head:
+            continue
+        n = ont.normalize(ent.text)
+        if not n or n in known_tech:
+            continue
+        norms.add(n)
+        norms.update(w for w in n.split() if len(w) > 2 and w not in known_tech)
+    return norms
+
+
 def _extract_jd_keywords(doc, ontology: dict) -> list[str]:
     """Extract technical keywords from a spaCy-processed JD document."""
     implies_keys = set(ontology.get("implies", {}).keys())
     alias_vals = set(ontology.get("aliases", {}).values())
     known_tech: dict[str, str] = {ont.normalize(k): k for k in implies_keys | alias_vals}
+    company = _company_norms(doc, known_tech)
 
     seen_norms: set[str] = set()
     keywords: list[str] = []
 
     def _add(text: str) -> None:
-        text = " ".join(text.split())  # collapse whitespace incl. newlines
+        text = _strip_leading_article(" ".join(text.split()))
         if not text:
             return
         n = ont.normalize(text)
-        if n in seen_norms or len(n) <= 2 or n in _GENERIC_TERMS:
+        if n in seen_norms or _looks_like_noise(n):
             return
-        words_lower = [w.lower().rstrip("s") for w in n.split()]
-        if len(words_lower) > 1 and any(w in _HR_WORD_BLOCKLIST for w in words_lower):
+        if n in company or any(w in company for w in n.split()):
             return
         seen_norms.add(n)
         keywords.append(text)
@@ -242,70 +301,295 @@ def _build_section_texts(resume: ResumeData) -> dict[str, str]:
     }
 
 
+def _term_variants(norm: str) -> set[str]:
+    """Singular/plural variants of a normalized term (last word only).
+
+    Additive: the original form is always included, so the worst case is a
+    variant that simply never matches.
+    """
+    variants = {norm}
+    words = norm.split()
+    last = words[-1] if words else ""
+    head = " ".join(words[:-1])
+
+    def _with_last(new_last: str) -> str:
+        return f"{head} {new_last}".strip()
+
+    if len(last) > 3:
+        if last.endswith("ies"):
+            variants.add(_with_last(last[:-3] + "y"))
+        elif last.endswith("es"):
+            variants.add(_with_last(last[:-2]))
+            variants.add(_with_last(last[:-1]))
+        elif last.endswith("s") and not last.endswith("ss"):
+            variants.add(_with_last(last[:-1]))
+    if last and not last.endswith("s"):
+        variants.add(_with_last(last + "s"))
+    return variants
+
+
+_STEM_STRIP = ("ment", "tion", "ing", "ed", "es", "er", "s")
+_STEM_GROW = ("", "e", "s", "es", "ed", "ing", "ment", "ement", "ion", "er")
+
+
+def _stem_family(norm: str) -> set[str]:
+    """Derivational surface forms of the head word (Sovren-style stemming).
+
+    "manage" ↔ "managed" ↔ "managing" ↔ "management" all hit. Junk forms are
+    harmless — matching is additive, and a form like "manageed" never occurs
+    in real text. Words under 5 chars are left alone (protects Go, AWS, C#…).
+    """
+    words = norm.split()
+    last = words[-1] if words else ""
+    if len(last) < 5 or not last.isalpha():
+        return set()
+
+    bases = {last}
+    for suf in _STEM_STRIP:
+        if last.endswith(suf) and len(last) - len(suf) >= 4:
+            bases.add(last[: -len(suf)])
+    for b in list(bases):
+        if b.endswith("e"):
+            bases.add(b[:-1])
+
+    head = " ".join(words[:-1])
+    return {f"{head} {b}{suf}".strip() for b in bases for suf in _STEM_GROW}
+
+
+def _direct_sections(kw_norm: str, section_norms: dict[str, str]) -> list[str]:
+    """Sections where the keyword appears whole-word, including
+    singular/plural variants and the stemmed family of the head word."""
+    forms = _term_variants(kw_norm) | _stem_family(kw_norm)
+    pattern = "|".join(re.escape(v) for v in sorted(forms))
+    rx = re.compile(rf"\b(?:{pattern})\b")
+    return [section for section, text in section_norms.items() if rx.search(text)]
+
+
+def _compound_words(kw_norm: str) -> list[str]:
+    """Content words of a multi-word term ([] when not a compound)."""
+    words = [w for w in kw_norm.split() if len(w) > 2 and w not in _GENERIC_TERMS]
+    return words if len(words) >= 2 else []
+
+
 def _score_keyword(
     kw: str,
-    section_texts: dict[str, str],
+    section_norms: dict[str, str],
     expanded_norms: set[str],
-    skill_items: list[str],
+    fuzzy_candidates: list[str],
 ) -> tuple[float, list[str], str]:
+    """Score one JD keyword against the resume.
+
+    Match ladder: direct (whole-word incl. singular/plural variants) →
+    ontology expansion → compound (every content word of a multi-word term
+    covered individually) → fuzzy string match. Direct matches that appear
+    only in the skills list are slightly discounted: a skill demonstrated in
+    experience or projects reads stronger to a reviewer than a bare list entry.
+    """
     kw_norm = ont.normalize(kw)
-    found_in: list[str] = []
 
-    # Direct match (whole-word to prevent e.g. "java" matching "javascript")
-    for section, text in section_texts.items():
-        if re.search(rf"\b{re.escape(kw_norm)}\b", ont.normalize(text)):
-            found_in.append(section)
+    found_in = _direct_sections(kw_norm, section_norms)
     if found_in:
-        return _KW_SCORE_DIRECT, found_in, "direct"
+        score = _KW_SCORE_DIRECT
+        if found_in == ["skills"]:
+            score *= _SKILLS_ONLY_FACTOR
+        return score, found_in, "direct"
 
-    # Ontology expansion match
-    if kw_norm in expanded_norms:
+    # Ontology expansion match (resume skills imply this keyword)
+    if _term_variants(kw_norm) & expanded_norms:
         return _KW_SCORE_ONTOLOGY, ["skills"], "ontology"
 
-    # Fuzzy match against individual skill items (rapidfuzz)
+    # Compound: "node.js microservices" counts when every content word is
+    # covered somewhere (directly or via ontology), just not as one phrase.
+    words = _compound_words(kw_norm)
+    if words:
+        covered_sections: set[str] = set()
+        all_covered = True
+        for w in words:
+            secs = _direct_sections(w, section_norms)
+            if secs:
+                covered_sections.update(secs)
+            elif _term_variants(w) & expanded_norms:
+                covered_sections.add("skills")
+            else:
+                all_covered = False
+                break
+        if all_covered:
+            return _KW_SCORE_COMPOUND, sorted(covered_sections), "compound"
+
+    # Fuzzy match against short candidate strings (skill items + project tech)
     if _HAS_RAPIDFUZZ:
-        for item in skill_items:
-            if _fuzz.ratio(kw_norm, ont.normalize(item)) >= _FUZZY_MIN_RATIO:
+        scorer = _fuzz.token_set_ratio if " " in kw_norm else _fuzz.ratio
+        for item in fuzzy_candidates:
+            if scorer(kw_norm, ont.normalize(item)) >= _FUZZY_MIN_RATIO:
                 return _KW_SCORE_FUZZY, ["skills"], "fuzzy"
 
     return 0.0, [], "none"
 
 
-def _normalize_title_tokens(tokens: set[str]) -> set[str]:
-    """Map role synonyms to a canonical token so Jaccard can match across terms."""
-    return {_ROLE_EQUIV.get(t, t) for t in tokens}
+# ── keyword importance ───────────────────────────────────────────────────────
+
+_REQUIRED_CTX_RE = re.compile(
+    r"\b(?:required|must[ -]have|must\b|essential|proficient|proficiency|expert(?:ise)?|strong)\b",
+    re.IGNORECASE,
+)
+_NICE_CTX_RE = re.compile(
+    r"\b(?:nice[ -]to[ -]have|preferred|a plus|plus\b|bonus|good[ -]to[ -]have|familiar(?:ity)?)\b",
+    re.IGNORECASE,
+)
+_REQUIRED_HEADING_RE = re.compile(
+    r"^(?:requirements?|(?:minimum |basic )?qualifications?|must[ -]haves?"
+    r"|what (?:you(?:'|’)?ll need|we(?:'|’)re looking for)|skills?(?: required)?)\b",
+    re.IGNORECASE,
+)
+_NICE_HEADING_RE = re.compile(
+    r"^(?:nice[ -]to[ -]haves?|preferred(?: qualifications?)?|bonus(?: points?)?"
+    r"|good[ -]to[ -]haves?|extra credit|pluses)\b",
+    re.IGNORECASE,
+)
 
 
-def _title_score(jd_title: str, positions: list[Position]) -> float:
+def _classify_jd_blocks(jd_text: str) -> list[tuple[str, str]]:
+    """Split the JD into (kind, text) blocks by heading: "required",
+    "nice", or "body". Real JDs put must-haves and nice-to-haves under
+    separate headings, not on the same line as the skill."""
+    blocks: list[tuple[str, str]] = []
+    for block in re.split(r"\n{2,}", jd_text):
+        heading = block.strip().split("\n")[0].strip()
+        if _REQUIRED_HEADING_RE.match(heading):
+            kind = "required"
+        elif _NICE_HEADING_RE.match(heading):
+            kind = "nice"
+        else:
+            kind = "body"
+        blocks.append((kind, block.lower()))
+    return blocks
+
+
+def _keyword_weights(jd_text: str, keywords: list[str]) -> dict[str, float]:
+    """Importance of each JD keyword from repetition and surrounding context.
+
+    Context comes from two signals: the heading of the JD block the keyword
+    sits under (Requirements vs Nice-to-have), and required/preferred phrasing
+    on the same line. A keyword mentioned three times under "Requirements"
+    matters far more than one mentioned once under "Bonus points". Weights
+    multiply each keyword's contribution to the keyword score (matched and
+    missing alike).
+    """
+    norm_text = ont.normalize(jd_text)
+    lines = [ln for ln in jd_text.split("\n") if ln.strip()]
+    blocks = _classify_jd_blocks(jd_text)
+
+    weights: dict[str, float] = {}
+    for kw in keywords:
+        kw_norm = ont.normalize(kw)
+        freq = len(re.findall(rf"\b{re.escape(kw_norm)}\b", norm_text)) if kw_norm else 0
+        weight = 1.0 + _IMP_FREQ_BONUS * min(max(freq - 1, 0), _IMP_FREQ_CAP)
+
+        kw_lower = kw.lower()
+
+        # Same-line phrasing is the most specific signal ("GraphQL is a plus"
+        # under a Requirements heading is still a nice-to-have).
+        line_required = line_nice = False
+        for line in lines:
+            if kw_lower in line.lower():
+                if _REQUIRED_CTX_RE.search(line):
+                    line_required = True
+                elif _NICE_CTX_RE.search(line):
+                    line_nice = True
+
+        block_required = block_nice = False
+        for kind, block in blocks:
+            if kind != "body" and kw_lower in block:
+                if kind == "required":
+                    block_required = True
+                else:
+                    block_nice = True
+
+        if line_nice and not line_required:
+            weight *= _IMP_NICE_FACTOR
+        elif line_required or block_required:
+            weight *= _IMP_REQUIRED_BOOST
+        elif block_nice:
+            weight *= _IMP_NICE_FACTOR
+
+        weights[kw] = round(weight, 3)
+    return weights
+
+
+def _canonical_title_tokens(title: str, ontology: dict) -> set[str]:
+    """Normalize a job title to comparable role tokens.
+
+    Applies the ontology's title_aliases phrase map (e.g. "swe" →
+    "software engineer"), strips seniority words, and folds role synonyms
+    (developer/programmer → engineer).
+    """
+    t = ont.normalize(title)
+    for phrase, canonical in ontology.get("title_aliases", {}).items():
+        p = ont.normalize(phrase)
+        if p and re.search(rf"\b{re.escape(p)}\b", t):
+            t = re.sub(rf"\b{re.escape(p)}\b", ont.normalize(canonical), t)
+    tokens = set(t.split()) - _SENIORITY
+    return {_ROLE_EQUIV.get(tok, tok) for tok in tokens}
+
+
+def _seniority_level(title: str, levels: dict[str, int]) -> int | None:
+    tokens = set(ont.normalize(title).split())
+    found = [lvl for tok, lvl in levels.items() if tok and tok in tokens]
+    return max(found) if found else None
+
+
+def _seniority_bonus(jd_title: str, positions: list[Position], levels: dict[str, int]) -> float:
+    """0-10 bonus for how well resume seniority lines up with the JD's."""
+    jd_lvl = _seniority_level(jd_title, levels)
+    resume_lvls = [lvl for p in positions if (lvl := _seniority_level(p.title, levels)) is not None]
+    resume_lvl = max(resume_lvls) if resume_lvls else None
+
+    if jd_lvl is None and resume_lvl is None:
+        return 10.0  # no seniority requirement to miss
+    if jd_lvl is None or resume_lvl is None:
+        return 5.0
+    diff = abs(jd_lvl - resume_lvl)
+    if diff == 0:
+        return 10.0
+    if diff == 1:
+        return 6.0
+    return 0.0
+
+
+def _title_score(jd_title: str, positions: list[Position], ontology: dict | None = None) -> float:
     if not jd_title or not positions:
         return 50.0
+    ontology = ontology or ont.load_ontology()
 
-    jd_tokens = _normalize_title_tokens(set(ont.normalize(jd_title).split()) - _SENIORITY)
+    jd_tokens = _canonical_title_tokens(jd_title, ontology)
     if not jd_tokens:
         return 50.0
 
     best = 0.0
     for pos in positions:
-        pos_tokens = _normalize_title_tokens(set(ont.normalize(pos.title).split()) - _SENIORITY)
+        pos_tokens = _canonical_title_tokens(pos.title, ontology)
         if not pos_tokens:
             continue
         inter = jd_tokens & pos_tokens
-        union = jd_tokens | pos_tokens
-        sim = len(inter) / len(union) if union else 0.0
+        # Blend overlap coefficient (containment: "software engineer" inside
+        # "senior full stack software engineer" scores 1.0) with Jaccard
+        # (penalises titles that share little overall).
+        overlap = len(inter) / min(len(jd_tokens), len(pos_tokens))
+        jaccard = len(inter) / len(jd_tokens | pos_tokens)
+        sim = 0.6 * overlap + 0.4 * jaccard
         if sim > best:
             best = sim
 
-    # Seniority match bonus
-    jd_full_tokens = set(ont.normalize(jd_title).split())
-    resume_titles_concat = " ".join(ont.normalize(p.title) for p in positions)
-    resume_tokens = set(resume_titles_concat.split())
-    bonus = 10.0 if (jd_full_tokens & _SENIORITY) and (resume_tokens & _SENIORITY) else 0.0
-
-    return min(100.0, best * 100 + bonus)
+    bonus = _seniority_bonus(jd_title, positions, ontology.get("seniority_levels", {}))
+    return min(100.0, round(best * 90.0 + bonus, 1))
 
 
 def _experience_score(resume: ResumeData, jd_text: str) -> tuple[float, float]:
-    """Returns (score, years_detected)."""
+    """Returns (score, years_detected).
+
+    Continuous curves instead of cliffs: 4.9 years against a 5-year
+    requirement should score ~98, not drop a whole bracket.
+    """
     years = compute_years_experience(resume.all_positions())
     req_match = re.search(r"(\d+)\+?\s*(?:to\s*\d+\s*)?years?", jd_text.lower())
     req_years = float(req_match.group(1)) if req_match else None
@@ -314,32 +598,40 @@ def _experience_score(resume: ResumeData, jd_text: str) -> tuple[float, float]:
         ratio = years / req_years
         if ratio >= 1.0:
             score = 100.0
-        elif ratio >= 0.8:
-            score = 75.0
-        elif ratio >= 0.5:
-            score = 50.0
         else:
-            score = 25.0
+            # Slightly superlinear: small shortfalls cost little, large ones a lot.
+            score = max(15.0, round(100.0 * ratio ** 1.15, 1))
     else:
-        if years >= _EXP_IDEAL:
+        # No stated requirement — interpolate the config ladder linearly.
+        ladder = [
+            (float(_EXP_IDEAL), 100.0),
+            (float(_EXP_GOOD), 90.0),
+            (float(_EXP_OK), 70.0),
+            (float(_EXP_PARTIAL), 40.0),
+            (0.0, 10.0),
+        ]
+        if years >= ladder[0][0]:
             score = 100.0
-        elif years >= _EXP_GOOD:
-            score = 90.0
-        elif years >= _EXP_OK:
-            score = 70.0
-        elif years >= _EXP_PARTIAL:
-            score = 40.0
         else:
             score = 10.0
+            for (hi_y, hi_s), (lo_y, lo_s) in zip(ladder, ladder[1:]):
+                if lo_y <= years < hi_y:
+                    frac = (years - lo_y) / (hi_y - lo_y) if hi_y > lo_y else 0.0
+                    score = round(lo_s + (hi_s - lo_s) * frac, 1)
+                    break
 
     return score, years
 
 
-def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[float, EduGap | None]:
-    edu_levels: dict[str, float] = ontology.get("education_levels", {})
-    if not resume.schools:
-        return 30.0, None
+_CS_TERMS = {"computer science", "software engineering", "information technology", "computing"}
 
+
+def _resume_education_level(resume: ResumeData, edu_levels: dict[str, float]) -> tuple[float, str, str]:
+    """Return (level, level_keyword, cs_field) for the resume's highest degree.
+
+    Assumes a bachelor's if no known degree keyword is found. cs_field is the
+    matched CS-adjacent field of study, or "" when none matched.
+    """
     highest = 0.0
     highest_kw = ""
     all_edu_text = " ".join(f"{s.degree} {s.institution}".lower() for s in resume.schools)
@@ -351,113 +643,114 @@ def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[
         highest = 60.0
         highest_kw = "bachelor"  # assumed
 
-    cs_terms = {"computer science", "software engineering", "information technology", "computing"}
-    cs_match = next((t for t in cs_terms if t in all_edu_text), None)
-    cs_bonus = 10.0 if cs_match else 0.0
+    cs_match = next((t for t in _CS_TERMS if t in all_edu_text), "")
+    return highest, highest_kw, cs_match
 
+
+def _jd_education_requirement(
+    jd_text: str, edu_levels: dict[str, float]
+) -> tuple[float, str, bool, float]:
+    """Extract the JD's degree requirement.
+
+    Returns (required_level, required_keyword, is_flexible, preferred_level).
+    required_level is 0.0 when the JD states no degree requirement. When the
+    JD offers alternatives ("Bachelor or Master"), is_flexible is True,
+    required_level is the minimum, and preferred_level the maximum.
+    """
     jd_lower = jd_text.lower()
-    jd_req = 0.0
-    jd_req_kw = ""
-    jd_preferred = 0.0  # highest level when JD offers alternatives via "or"
-    jd_is_flexible = False  # True when JD accepts a range (e.g. "Bachelor or Master")
 
-    # Collect all edu keywords found in the JD with their positions
     jd_found: list[tuple[str, float, int]] = []  # (keyword, level, pos)
     for keyword, level in edu_levels.items():
         pos = jd_lower.find(keyword)
         if pos != -1:
             jd_found.append((keyword, float(level), pos))
+    if not jd_found:
+        return 0.0, "", False, 0.0
 
-    if jd_found:
-        # Check if multiple degree keywords appear within ~120 chars of each other
-        # with "or" between them — indicating flexible requirements
-        jd_found.sort(key=lambda x: x[2])  # sort by position
-        if len(jd_found) >= 2:
-            for i in range(len(jd_found) - 1):
-                kw_a, lvl_a, pos_a = jd_found[i]
-                kw_b, lvl_b, pos_b = jd_found[i + 1]
-                span = jd_lower[pos_a: pos_b + len(kw_b)]
-                if "or" in span and (pos_b - pos_a) <= 120:
-                    jd_is_flexible = True
-                    jd_req = min(lvl_a, lvl_b)
-                    jd_preferred = max(lvl_a, lvl_b)
-                    jd_req_kw = kw_a if lvl_a < lvl_b else kw_b
-                    break
+    # Multiple degree keywords within ~120 chars joined by "or" indicate a
+    # flexible requirement (e.g. "Bachelor or Master degree").
+    jd_found.sort(key=lambda x: x[2])  # sort by position
+    for i in range(len(jd_found) - 1):
+        kw_a, lvl_a, pos_a = jd_found[i]
+        kw_b, lvl_b, pos_b = jd_found[i + 1]
+        span = jd_lower[pos_a: pos_b + len(kw_b)]
+        if "or" in span and (pos_b - pos_a) <= 120:
+            req = min(lvl_a, lvl_b)
+            preferred = max(lvl_a, lvl_b)
+            req_kw = kw_a if lvl_a < lvl_b else kw_b
+            return req, req_kw, True, preferred
 
-        if not jd_is_flexible:
-            # No "or" alternative — take the highest mentioned as strict requirement
-            for keyword, level, _ in jd_found:
-                if level > jd_req:
-                    jd_req = level
-                    jd_req_kw = keyword
+    # No "or" alternative — take the highest mentioned as strict requirement
+    req_kw, req, _ = max(jd_found, key=lambda x: x[1])
+    return req, req_kw, False, 0.0
 
-    resume_field = cs_match or ""
-    resume_degree = resume.schools[0].degree if resume.schools else ""
 
-    if jd_req > 0:
-        if highest >= jd_req:
-            if jd_is_flexible and jd_preferred > jd_req and highest < jd_preferred:
-                # Meets the minimum of a flexible "X or Y" requirement but not the preferred higher degree
-                # Penalty proportional to the gap between min and preferred on the degree ladder
-                ladder_gap = jd_preferred - jd_req
-                light_penalty = min(12.0, round(ladder_gap * 0.3, 1))
-                score = min(100.0, 100.0 - light_penalty + cs_bonus)
-            else:
-                # Exactly meets or exceeds the requirement
-                score = min(100.0, 100.0 + cs_bonus)
-            gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
-                         jd_required=jd_req_kw, jd_required_level=jd_req,
-                         resume_level_score=highest, cs_bonus=cs_bonus, matched=True)
+def _education_score(resume: ResumeData, jd_text: str, ontology: dict) -> tuple[float, EduGap | None]:
+    edu_levels: dict[str, float] = ontology.get("education_levels", {})
+    if not resume.schools:
+        return 30.0, None
+
+    highest, highest_kw, cs_match = _resume_education_level(resume, edu_levels)
+    cs_bonus = 10.0 if cs_match else 0.0
+    jd_req, jd_req_kw, jd_is_flexible, jd_preferred = _jd_education_requirement(jd_text, edu_levels)
+
+    if jd_req <= 0:
+        return min(100.0, highest + cs_bonus), None
+
+    matched = highest >= jd_req
+    if matched:
+        if jd_is_flexible and jd_preferred > jd_req and highest < jd_preferred:
+            # Meets the minimum of a flexible "X or Y" requirement but not the
+            # preferred higher degree — light penalty proportional to the gap
+            # between min and preferred on the degree ladder.
+            ladder_gap = jd_preferred - jd_req
+            light_penalty = min(12.0, round(ladder_gap * 0.3, 1))
+            score = min(100.0, 100.0 - light_penalty + cs_bonus)
         else:
-            # Does not meet the stated requirement — heavy penalty proportional to how far below
-            degree_gap = jd_req - highest
-            if degree_gap <= 30:
-                # One step below (e.g. BSc vs Masters-only JD)
-                score = min(100.0, 50.0 + cs_bonus)
-            else:
-                # Two or more steps below (e.g. BSc vs PhD-only JD)
-                score = min(100.0, 25.0 + cs_bonus)
-            gap = EduGap(resume_level=highest_kw, resume_field=resume_field,
-                         jd_required=jd_req_kw, jd_required_level=jd_req,
-                         resume_level_score=highest, cs_bonus=cs_bonus, matched=False)
-        return score, gap
+            score = min(100.0, 100.0 + cs_bonus)
+    else:
+        # Below the stated requirement — heavy penalty by how far below:
+        # one ladder step (e.g. BSc vs Masters-only) vs two or more (vs PhD).
+        score = min(100.0, (50.0 if jd_req - highest <= 30 else 25.0) + cs_bonus)
 
-    return min(100.0, highest + cs_bonus), None
+    gap = EduGap(resume_level=highest_kw, resume_field=cs_match,
+                 jd_required=jd_req_kw, jd_required_level=jd_req,
+                 resume_level_score=highest, cs_bonus=cs_bonus, matched=matched)
+    return score, gap
 
 
 def run(
     resume: ResumeData,
     jd_text: str,
     threshold: float = _PASS_THRESHOLD,
-    use_groq: bool = False,  # kept for call-site compat; prefer use_llm
     use_llm: bool = False,
+    progress=None,
 ) -> JDResult:
+    """Score *resume* against *jd_text*. Pure — prints nothing.
+
+    *progress* may provide step(label) / done(note) methods (e.g. ats.term)
+    to receive progress events; by default they are discarded.
+    """
     if not jd_text or not jd_text.strip():
         raise ValueError("jd_text must not be empty")
 
-    if use_llm or use_groq:
-        return _run_llm(resume, jd_text, threshold)
-    return _run_spacy(resume, jd_text, threshold)
+    progress = progress if progress is not None else _NULL_PROGRESS
+    if use_llm:
+        return _run_llm(resume, jd_text, threshold, progress)
+    return _run_spacy(resume, jd_text, threshold, progress)
 
 
-# ── ANSI helpers for inline step output ─────────────────────────────────────
-_CYAN  = "\033[0;36m"
-_GREEN = "\033[0;32m"
-_GRAY  = "\033[0;37m"
-_BOLD  = "\033[1m"
-_NC    = "\033[0m"
-_STEP_W = 52  # fixed width for the label column
+class _NullProgress:
+    """Default progress sink — scoring stays silent unless the caller listens."""
+
+    def step(self, label: str) -> None:
+        pass
+
+    def done(self, note: str = "") -> None:
+        pass
 
 
-def _step(label: str) -> None:
-    plain_len = 2 + len(label)
-    pad = max(1, _STEP_W - plain_len)
-    print(f"  {label}{' ' * pad}", end="", flush=True)
-
-
-def _done(note: str = "") -> None:
-    note_str = f"  {_GRAY}{note}{_NC}" if note else ""
-    print(f"{_GREEN}✓{_NC}{note_str}")
+_NULL_PROGRESS = _NullProgress()
 
 
 def _compute_density(matched: list[KeywordMatch]) -> dict[str, int]:
@@ -469,44 +762,33 @@ def _compute_density(matched: list[KeywordMatch]) -> dict[str, int]:
     return dict(density)
 
 
-def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
-    print()
-    _step("Parsing job description…")
-    ontology = ont.load_ontology()
-    jd_title = _extract_jd_title(jd_text)
-    cleaned_jd = _strip_nontechnical_sections(jd_text)
-    _done(f"title: {jd_title!r}" if jd_title else "")
+def _assemble_result(
+    resume: ResumeData,
+    jd_text: str,
+    jd_title: str,
+    ontology: dict,
+    matched: list[KeywordMatch],
+    missing: list[str],
+    jd_keywords: list[str],
+    kw_weights: dict[str, float],
+    threshold: float,
+    backend: str,
+    **extras,
+) -> JDResult:
+    """Compute the weighted component scores and build the final JDResult.
 
-    _step("Extracting keywords via NLP…")
-    nlp = _load_spacy()
-    doc = nlp(cleaned_jd)
-    jd_keywords = _extract_jd_keywords(doc, ontology)
-    _done(f"{len(jd_keywords)} keywords identified")
+    The keyword score is an importance-weighted average: each keyword
+    contributes match_score × importance, normalized by total importance —
+    so missing a "required" keyword hurts more than missing a "plus".
+    """
+    for m in matched:
+        m.weight = kw_weights.get(m.keyword, 1.0)
+    missing = sorted(missing, key=lambda k: kw_weights.get(k, 1.0), reverse=True)
 
-    _step("Matching resume against keywords…")
-    section_texts = _build_section_texts(resume)
-    skill_items = [item for sc in resume.skills for item in sc.items]
-    all_skill_names = skill_items[:]
-    for proj in resume.projects:
-        all_skill_names.extend(proj.tech)
-    expanded = ont.expand_skills(all_skill_names, ontology)
-    expanded_norms = {ont.normalize(s) for s in expanded}
-
-    matched: list[KeywordMatch] = []
-    missing: list[str] = []
-    total_weighted = 0.0
-    for kw in jd_keywords:
-        score, found_in, via = _score_keyword(kw, section_texts, expanded_norms, skill_items)
-        if score > 0:
-            matched.append(KeywordMatch(keyword=kw, found_in=found_in, matched_via=via, score=score))
-            total_weighted += score
-        else:
-            missing.append(kw)
-    _done(f"{len(matched)} matched · {len(missing)} missing")
-
-    _step("Computing weighted scores…")
-    keyword_score = (total_weighted / len(jd_keywords)) * 100.0 if jd_keywords else 0.0
-    title_score = _title_score(jd_title, resume.positions)
+    total_importance = sum(kw_weights.get(k, 1.0) for k in jd_keywords)
+    earned = sum(m.score * m.weight for m in matched)
+    keyword_score = (earned / total_importance) * 100.0 if total_importance else 0.0
+    title_score = _title_score(jd_title, resume.positions, ontology)
     exp_score, years_detected = _experience_score(resume, jd_text)
     edu_score, edu_gap = _education_score(resume, jd_text, ontology)
     overall = (
@@ -515,9 +797,6 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         + exp_score * _W_EXP
         + edu_score * _W_EDU
     )
-    _done()
-    print()
-
     return JDResult(
         overall_score=round(overall, 1),
         keyword_score=round(keyword_score, 1),
@@ -533,9 +812,88 @@ def _run_spacy(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         threshold=threshold,
         edu_gap=edu_gap,
         author_name=resume.contact.full_name,
-        backend="spacy",
+        author_email=resume.contact.email,
+        backend=backend,
         keyword_density=_compute_density(matched),
+        keyword_weights=kw_weights,
+        **extras,
     )
+
+
+def _run_spacy(resume: ResumeData, jd_text: str, threshold: float, progress) -> JDResult:
+    progress.step("Parsing job description…")
+    ontology = ont.load_ontology()
+    jd_title = _extract_jd_title(jd_text)
+    cleaned_jd = _strip_nontechnical_sections(jd_text)
+    progress.done(f"title: {jd_title!r}" if jd_title else "")
+
+    progress.step("Extracting keywords via NLP…")
+    nlp = _load_spacy()
+    doc = nlp(cleaned_jd)
+    jd_keywords = _extract_jd_keywords(doc, ontology)
+    progress.done(f"{len(jd_keywords)} keywords identified")
+
+    progress.step("Matching resume against keywords…")
+    section_norms = {s: ont.normalize(t) for s, t in _build_section_texts(resume).items()}
+    fuzzy_candidates = [item for sc in resume.skills for item in sc.items]
+    for proj in resume.projects:
+        fuzzy_candidates.extend(proj.tech)
+    expanded = ont.expand_skills(fuzzy_candidates, ontology)
+    expanded_norms = {ont.normalize(s) for s in expanded}
+
+    matched: list[KeywordMatch] = []
+    missing: list[str] = []
+    for kw in jd_keywords:
+        score, found_in, via = _score_keyword(kw, section_norms, expanded_norms, fuzzy_candidates)
+        if score > 0:
+            matched.append(KeywordMatch(keyword=kw, found_in=found_in, matched_via=via, score=score))
+        else:
+            missing.append(kw)
+    _apply_stale_discount(matched, resume)
+    progress.done(f"{len(matched)} matched · {len(missing)} missing")
+
+    progress.step("Computing weighted scores…")
+    kw_weights = _keyword_weights(jd_text, jd_keywords)
+    result = _assemble_result(
+        resume, jd_text, jd_title, ontology,
+        matched, missing, jd_keywords, kw_weights,
+        threshold, backend="spacy",
+        soft_skills=_scan_soft_skills(jd_text, resume),
+    )
+    progress.done()
+    return result
+
+
+def _apply_stale_discount(matched: list[KeywordMatch], resume: ResumeData) -> None:
+    """Discount skills demonstrated only in roles before the current one.
+
+    Real ATS weight recent experience in the required stack more heavily —
+    a skill last used three jobs ago is a weaker signal than one used today.
+    Skills/projects/summary mentions are treated as current.
+    """
+    if not resume.positions:
+        return
+    current = resume.positions[0]
+    recent_norm = {"recent": ont.normalize(f"{current.title} {' '.join(current.items)}")}
+    for m in matched:
+        if m.found_in == ["experience"] and not _direct_sections(ont.normalize(m.keyword), recent_norm):
+            m.score = round(m.score * _STALE_FACTOR, 3)
+            m.stale = True
+
+
+def _scan_soft_skills(jd_text: str, resume: ResumeData) -> list[tuple[str, bool]]:
+    """Soft skills the JD asks for, and whether the resume mentions them.
+
+    Reported for awareness (the way market checkers do) rather than scored —
+    soft-skill keyword presence is a weak signal either way.
+    """
+    jd_lower = jd_text.lower()
+    resume_lower = resume.all_text().lower()
+    return [
+        (skill, skill in resume_lower)
+        for skill in _SOFT_SKILLS
+        if skill in jd_lower
+    ]
 
 
 # Map LLM match types → score values and renderer "matched_via" labels.
@@ -551,24 +909,23 @@ _LLM_VIA_MAP = {
 }
 
 
-def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
+def _run_llm(resume: ResumeData, jd_text: str, threshold: float, progress) -> JDResult:
     from . import llm_analyzer
 
-    print()
-    _step("Parsing job description…")
+    progress.step("Parsing job description…")
     ontology = ont.load_ontology()
     jd_title = _extract_jd_title(jd_text)
-    _done(f"title: {jd_title!r}" if jd_title else "")
+    progress.done(f"title: {jd_title!r}" if jd_title else "")
 
-    _step("Extracting keywords via LLM…")
+    progress.step("Extracting keywords via LLM…")
     jd_keywords = llm_analyzer.extract_jd_keywords(jd_text)
-    _done(f"{len(jd_keywords)} keywords identified")
+    progress.done(f"{len(jd_keywords)} keywords identified")
 
-    _step("Matching resume semantically…")
+    progress.step("Matching resume semantically…")
     analysis = llm_analyzer.analyze_resume_match(resume, jd_text, jd_keywords)
-    _done(f"{len(analysis.matched)} matched · {len(analysis.missing)} missing")
+    progress.done(f"{len(analysis.matched)} matched · {len(analysis.missing)} missing")
 
-    _step("Generating bullet rewrites…")
+    progress.step("Generating bullet rewrites…")
     raw_rewrites = llm_analyzer.generate_bullet_rewrites(
         resume, analysis.missing, jd_text, max_rewrites=_MAX_REWRITES
     )
@@ -581,49 +938,24 @@ def _run_llm(resume: ResumeData, jd_text: str, threshold: float) -> JDResult:
         )
         for r in raw_rewrites
     ]
-    _done(f"{len(bullet_rewrites)} rewrite(s)")
+    progress.done(f"{len(bullet_rewrites)} rewrite(s)")
 
-    _step("Computing weighted scores…")
+    progress.step("Computing weighted scores…")
     matched: list[KeywordMatch] = []
-    total_weighted = 0.0
     for lm in analysis.matched:
         via   = _LLM_VIA_MAP.get(lm.match_type, "direct")
         score = _LLM_SCORE_MAP.get(lm.match_type, _KW_SCORE_DIRECT)
         matched.append(KeywordMatch(keyword=lm.keyword, found_in=lm.found_in, matched_via=via, score=score))
-        total_weighted += score
 
-    all_kw_count  = len(jd_keywords)
-    keyword_score = (total_weighted / all_kw_count) * 100.0 if all_kw_count else 0.0
-    title_score   = _title_score(jd_title, resume.positions)
-    exp_score, years_detected = _experience_score(resume, jd_text)
-    edu_score, edu_gap        = _education_score(resume, jd_text, ontology)
-    overall = (
-        keyword_score * _W_KEYWORD
-        + title_score * _W_TITLE
-        + exp_score   * _W_EXP
-        + edu_score   * _W_EDU
-    )
-    _done()
-    print()
-
-    return JDResult(
-        overall_score=round(overall, 1),
-        keyword_score=round(keyword_score, 1),
-        title_score=round(title_score, 1),
-        exp_score=round(exp_score, 1),
-        edu_score=round(edu_score, 1),
-        matched_keywords=matched,
-        missing_keywords=analysis.missing,
-        jd_keyword_count=all_kw_count,
-        jd_title=jd_title,
-        years_detected=years_detected,
-        passed=overall >= threshold,
-        threshold=threshold,
-        edu_gap=edu_gap,
-        author_name=resume.contact.full_name,
+    kw_weights = _keyword_weights(jd_text, jd_keywords)
+    result = _assemble_result(
+        resume, jd_text, jd_title, ontology,
+        matched, analysis.missing, jd_keywords, kw_weights,
+        threshold, backend="llm",
         suggestions=analysis.suggestions,
         role_fit=analysis.role_fit,
-        backend="llm",
-        keyword_density=_compute_density(matched),
         bullet_rewrites=bullet_rewrites,
+        soft_skills=_scan_soft_skills(jd_text, resume),
     )
+    progress.done()
+    return result

@@ -2,6 +2,11 @@
 
 import os
 import glob
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DIST_DIR = REPO_ROOT / "dist"
+CORE_DIR = REPO_ROOT / "core"
 
 
 def find_files(patterns):
@@ -35,9 +40,9 @@ def main() -> int:
     total_removed = 0
 
     # Dist directory
-    if os.path.isdir("dist"):
+    if DIST_DIR.is_dir():
         for ext in extensions:
-            matches = list(find_files([os.path.join("dist", f"*.{ext}")]))
+            matches = list(find_files([str(DIST_DIR / f"*.{ext}")]))
             if matches:
                 print(f"  🗑️  Removing {len(matches)} .{ext} file(s)")
                 for m in matches:
@@ -47,11 +52,11 @@ def main() -> int:
                     except OSError:
                         pass
 
-    # Root directory
+    # Core directory (where XeLaTeX runs — catches any stray aux files)
     for ext in extensions:
-        matches = list(find_files([f"*.{ext}"]))
+        matches = list(find_files([str(CORE_DIR / f"*.{ext}")]))
         if matches:
-            print(f"  🗑️  Removing {len(matches)} .{ext} file(s) from root")
+            print(f"  🗑️  Removing {len(matches)} .{ext} file(s) from core/")
             for m in matches:
                 try:
                     os.remove(m)
@@ -64,12 +69,12 @@ def main() -> int:
     else:
         print(f"✅ Cleaned up {total_removed} auxiliary file(s)")
 
-    if os.path.isdir("dist"):
+    if DIST_DIR.is_dir():
         print("")
         print("📂 Remaining files in dist/:")
-        for name in sorted(os.listdir("dist")):
+        for name in sorted(os.listdir(DIST_DIR)):
             try:
-                path = os.path.join("dist", name)
+                path = DIST_DIR / name
                 size = os.path.getsize(path)
                 print(f"   {name}  {size} bytes")
             except OSError:

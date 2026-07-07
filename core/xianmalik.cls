@@ -38,9 +38,9 @@
 \newcommand*{\fontdir}[1][fonts/]{\def\@fontdir{#1}}
 
 % Core modules
-\input{core/fonts}
-\input{core/layout}
-\input{core/colors}
-\input{core/styles}
-\input{core/commands}
-\input{core/structure}
+\input{partials/fonts}
+\input{partials/layout}
+\input{partials/colors}
+\input{partials/styles}
+\input{partials/commands}
+\input{partials/structure}

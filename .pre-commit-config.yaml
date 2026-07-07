@@ -15,8 +15,8 @@ repos:
     hooks:
       - id: validate-yaml
         name: Validate YAML data files
-        entry: python3 scripts/validate.py
+        entry: python3 core/scripts/validate.py
         language: python
         additional_dependencies: [pyyaml]
         pass_filenames: false
-        files: ^data/.*\.yml$
+        files: ^source/.*\.yml$
