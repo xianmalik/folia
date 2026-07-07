@@ -6,7 +6,7 @@
 -include .env
 export GROQ_API_KEY
 
-.PHONY: build watch open clean deps venv lint format test release docker-build ats ats-deps
+.PHONY: build watch open clean deps venv lint format test release docker-build ats ats-deps mcp mcp-deps mcp-register mcp-docker
 
 BUILD_SCRIPT := ./core/scripts/build.py
 PDF := dist/resume.pdf
@@ -62,6 +62,31 @@ release: deps
 docker-build:
 	@docker build -t folia .
 	@docker run --rm -v "$(PWD)/dist:/app/dist" folia
+
+# ── MCP server ──────────────────────────────────────────────────────────────
+#
+#   make mcp            → run the server on stdio (for testing / MCP inspector)
+#   make mcp-register   → register user-scope with Claude Code (all projects)
+#   make mcp-docker     → run the server inside Docker (repo mounted at /app)
+# ────────────────────────────────────────────────────────────────────────────
+
+MCP_SERVER := mcp/server.py
+
+mcp-deps: deps
+	@$(PY) -c "import mcp" >/dev/null 2>&1 || $(PIP) install -q -r requirements-mcp.txt
+
+mcp: mcp-deps
+	@PATH="$(VENV_DIR)/bin:$$PATH" $(PY) $(MCP_SERVER)
+
+mcp-register: mcp-deps
+	@command -v claude >/dev/null 2>&1 || { echo "claude CLI not found"; exit 1; }
+	@claude mcp remove --scope user folia >/dev/null 2>&1 || true
+	@claude mcp add --scope user folia -- "$(abspath $(VENV_DIR))/bin/python3" "$(abspath $(MCP_SERVER))"
+	@echo "Registered 'folia' MCP server (user scope) — available in every Claude Code session."
+
+mcp-docker:
+	@docker image inspect folia >/dev/null 2>&1 || docker build -t folia .
+	@docker run --rm -i -v "$(CURDIR):/app" $(if $(wildcard .env),--env-file .env,) folia python3 mcp/server.py
 
 # Install spaCy and its model — only needed when running without an LLM API key.
 ats-deps: deps
