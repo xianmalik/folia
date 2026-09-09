@@ -10,6 +10,9 @@ make build       # Generate TeX from YAML and compile to dist/resume.pdf
 make watch       # Auto-rebuild on file changes (requires fswatch: brew install fswatch)
 make open        # Build and open PDF in default viewer
 make clean       # Remove LaTeX auxiliary files from dist/
+make mcp         # Run the MCP server on stdio (testing / MCP inspector)
+make mcp-register # Register the MCP server user-scope with Claude Code
+make mcp-docker  # Run the MCP server inside Docker (repo mounted at /app)
 ```
 
 Direct Python equivalents:
@@ -30,6 +33,9 @@ python3 core/scripts/clean.py      # Clean auxiliary files
   - `core/resume.tex` — main LaTeX document
   - `core/xianmalik.cls` — custom CV document class (loads `core/partials/`)
 - `ats/` — ATS health-check and JD-matching package
+- `mcp/` — MCP server exposing resume content and build/ATS flows over stdio:
+  - `mcp/server.py` — thin entrypoint (run this; the directory is deliberately not a Python package — a top-level `mcp` package would shadow the MCP SDK)
+  - `mcp/folia/` — implementation: `config.py` (paths, limits, annotation presets), `models.py` (result types, report parsing), `content.py` (resume/JD read helpers), `runner.py` (subprocess plumbing), `tools.py`, `prompts.py`, `resources.py`
 - `docs/` — supplementary documentation (`CUSTOMIZATION.md`, `TODO.md`)
 - `dist/` — built PDF output
 - `VERSION` — single-line version string used for PDF naming and GitHub releases
@@ -47,6 +53,16 @@ This is a **YAML → LaTeX → PDF** resume generation system.
 **YAML formatting conventions:**
 - Use `[[text]]` syntax in YAML strings to render **bold** text in the PDF
 - Section files in `core/sections/` are auto-generated — never edit them directly
+
+## MCP server
+
+`mcp/server.py` serves the resume to Claude sessions in **any** project (registered at user scope):
+
+```bash
+make mcp-register   # installs the mcp dependency and registers user-scope
+```
+
+Paths inside the server are anchored via `__file__`, so it works regardless of the launch directory. Tools: `get_resume`, `get_section`, `get_contact`, `list_sections`, `resume_status`, `build_resume`, `ats_health_check`, `ats_match_jd`, `list_job_descriptions`, `save_job_description`, plus the write-back tools `add_project` / `add_experience` (append-only inserts into `source/*.yml` that preserve comments and refuse duplicates — pair with the `log_project_work` prompt to capture work from other repos). Flow tools shell out to the existing `core/scripts/` entry points with the repo venv on `PATH` and `.env` loaded (for `GROQ_API_KEY`).
 
 ## Release
 

@@ -146,6 +146,34 @@ make docker-build
 The PDF will be written to `dist/resume.pdf` on your host.
 
 <p align="center">
+    <h2 align="center">MCP Server</h2>
+</p>
+
+The repo ships an [MCP](https://modelcontextprotocol.io) server (`mcp/`) that gives AI coding agents access to the resume content, PDF build, and ATS flows from **any** project directory — handy for writing cover letters, portfolio pages, or project references without leaving the current workspace.
+
+```bash
+# One-time setup (installs the mcp dependency and registers user-scope)
+make mcp-register
+
+# Or run the server standalone / inside Docker
+make mcp           # stdio, local venv — for testing or the MCP inspector
+make mcp-docker    # stdio, containerized — repo mounted at /app, .env passed if present
+```
+
+To register the Docker variant instead of the local venv (no local Python/TeX needed beyond the image):
+
+```bash
+claude mcp add --scope user folia -- \
+  docker run --rm -i -v "$(pwd):/app" --env-file "$(pwd)/.env" folia python3 mcp/server.py
+```
+
+> The image skips spaCy to stay small, so JD matching in Docker uses the LLM backend (`GROQ_API_KEY`).
+
+Exposed tools: `get_resume`, `get_section`, `get_contact`, `list_sections`, `resume_status`, `build_resume`, `ats_health_check`, `ats_match_jd`, `list_job_descriptions`, `save_job_description`, `add_project`, `add_experience`.
+
+The write-back tools close the loop: while working in **any** repo, ask Claude to "add this project to my resume" (or use the `log_project_work` prompt) — it summarizes the repo, digs your contribution out of `git log`, drafts bullets in the house style, and on approval inserts the entry into `source/*.yml` and rebuilds the PDF.
+
+<p align="center">
     <h2 align="center">Customization</h2>
 </p>
 

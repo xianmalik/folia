@@ -4,9 +4,9 @@ positions:
     location: Hybrid - Dhaka, Bangladesh
     dates: January 2025 - Present
     items:
-      - Developed full-stack [[TypeScript]] features for an ML/AI-powered telecom network optimization platform, building a scalable dashboard with Next.js and Zustand while authoring type-safe API integration layers consumed by Python ML backend services.
-      - Designed and implemented advanced data visualization with interactive real-time charts displaying network performance metrics and ML model predictions for telecom operators.
-      - Engineered [[TypeScript]] REST API clients with strict type contracts, efficient caching strategies, and optimized data fetching patterns to manage large-scale telecom network datasets.
+      - Developed full-stack [[TypeScript]] features for an ML/AI-powered telecom network optimization platform, building scalable Next.js dashboards and type-safe API layers consumed by Python ML services.
+      - Designed interactive real-time dashboards visualizing 10K+ network performance metrics and ML model predictions, cutting anomaly diagnosis time by 40% for telecom operators.
+      - Engineered [[TypeScript]] REST API clients with strict type contracts and efficient caching strategies, reducing redundant network requests by 60% across large telecom datasets.
       - Developed industry-grade machine controller software with real-time bidirectional communication using [[TypeScript]], Next.js, and WebSocket integration for manufacturing operations.
       - Containerized frontend infrastructure with Docker and deployed across AWS environments, optimizing CI/CD pipelines and build performance.
       - Established TypeScript-first component architecture and design system standards, ensuring type safety and maintainability across multiple dashboard applications.
@@ -16,10 +16,11 @@ positions:
     location: Remote - Dhaka, Bangladesh
     dates: January 2015 - Present
     items:
-      - Architected and delivered full-stack [[TypeScript]] applications using Node.js/Express backends and React/Next.js frontends for clients across diverse industries.
+      - Architected and delivered 20+ full-stack [[TypeScript]] applications using Node.js/Express backends and React/Next.js frontends for clients across diverse industries.
       - Designed and implemented RESTful APIs with TypeScript and ExpressJS, integrating PostgreSQL and Firebase data stores with validated, type-safe data models.
-      - Developed Python automation scripts and data processing utilities to complement TypeScript-based systems and streamline backend workflows.
-      - Planned and engineered scalable web services applying modern TypeScript tooling across the full development lifecycle from API design to deployment.
+      - Built production [[NestJS]] backends with JWT authentication, TypeORM/Prisma data layers, background jobs, and payment webhooks, saving clients 15+ hours of manual work weekly.
+      - Developed Python automation scripts and data processing utilities that cut manual backend workflow effort by 50%.
+      - Planned and engineered scalable web services sustaining 99.9% uptime with modern TypeScript tooling end to end.
 
   - title: Senior Front-End Engineer
     company: Curotec
